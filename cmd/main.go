@@ -1,13 +1,14 @@
 package main
 
 import (
-	coap "coap-client/coap"
 	"errors"
 	"flag"
 	"log"
 	"net/url"
 	"os"
 	"strings"
+
+	coap "github.com/dusanb94/coap-cli/coap"
 
 	gocoap "github.com/dustin/go-coap"
 )

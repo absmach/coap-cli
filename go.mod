@@ -1,4 +1,4 @@
-module coap-client
+module github.com/dusanb94/coap-cli
 
 go 1.12
 
