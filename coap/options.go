@@ -1,7 +1,6 @@
 package coap
 
 import (
-	"fmt"
 	"net/url"
 
 	gocoap "github.com/dustin/go-coap"
@@ -13,9 +12,8 @@ type Option struct {
 	Value interface{}
 }
 
+// ParseOptions parases URL to CoAP options.
 func ParseOptions(u *url.URL) []Option {
-	// var ret []Option
-	fmt.Println(u.Path)
 	return []Option{
 		Option{
 			ID:    gocoap.URIHost,
@@ -34,10 +32,4 @@ func ParseOptions(u *url.URL) []Option {
 			Value: u.RawQuery,
 		},
 	}
-	// vals := u.Query()
-	// for k, v := range vals {
-	// 	fmt.Println("K:", k, "V:", v)
-	// 	// o := Option{ID: gocoap.URIPath}
-	// }
-	// return ret
 }

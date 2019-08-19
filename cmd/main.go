@@ -58,21 +58,34 @@ func checkType(c, n, a, r *bool) (gocoap.COAPType, error) {
 	return gocoap.Confirmable, nil
 }
 
+func printMsg(m *gocoap.Message) {
+	if m != nil {
+		log.Printf("Type: %d\nCode: %d\nMessageID: %d\nToken: %s\nPayload: %s\n",
+			m.Type, m.Code, m.MessageID, m.Token, m.Payload)
+	}
+}
+
 func main() {
+	if len(os.Args) < 2 {
+		log.Fatal("Message code must be GET, PUT, POST or DELETE")
+	}
 	code, err := parseCode(strings.ToUpper(os.Args[1]))
 	if err != nil {
 		log.Fatal("ERROR: ", err)
 	}
+	if len(os.Args) < 3 {
+		log.Fatal("Please enter valid CoAP URL")
+	}
 	addr := os.Args[2]
 	os.Args = os.Args[2:]
 
-	log.Println("CODE:", code)
-	c := flag.Bool("C", false, "CONFIRMABLE")
-	n := flag.Bool("NC", false, "NON-CONFIRMABLE")
-	a := flag.Bool("ACK", false, "ACKNOWLEDGEMENT")
-	r := flag.Bool("RST", false, "RESET")
-
+	c := flag.Bool("C", false, "Confirmable")
+	n := flag.Bool("NC", false, "Non-confirmable")
+	a := flag.Bool("ACK", false, "Acknowledgement")
+	r := flag.Bool("RST", false, "Reset")
 	o := flag.Bool("O", false, "Observe")
+
+	cf := flag.Int("CF", 0, "Content format")
 
 	d := flag.String("d", "", "Message data")
 	flag.Parse()
@@ -97,20 +110,35 @@ func main() {
 			Value: 0,
 		})
 	}
+	if *cf != 0 {
+		opts = append(opts, coap.Option{
+			ID:    gocoap.ContentFormat,
+			Value: *cf,
+		})
+	}
 
 	res, err := client.Send(t, code, 12, nil, []byte(*d), opts)
 	if err != nil {
 		log.Fatal("ERROR: ", err)
 	}
-	log.Println(res)
+	printMsg(res)
+	if res == nil {
+		os.Exit(0)
+	}
+	switch res.Code {
+	case gocoap.Forbidden, gocoap.BadRequest, gocoap.InternalServerError, gocoap.NotFound:
+		log.Fatalf("Response code: %s", res.Code)
+	}
 	if *o {
+		if code != gocoap.GET {
+			log.Fatalln("Can observe non GET requests.")
+		}
 		msgs := make(chan *gocoap.Message)
 		go func() {
 			for {
 				msg, err := client.Receive()
 				if err != nil {
 					log.Fatal("ERROR RECEIVING: ", err)
-					return
 				}
 				msgs <- msg
 			}
@@ -118,7 +146,7 @@ func main() {
 		for {
 			select {
 			case m := <-msgs:
-				log.Println(string(m.Payload))
+				printMsg(m)
 			}
 		}
 	}
