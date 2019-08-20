@@ -3,13 +3,12 @@ package main
 import (
 	"errors"
 	"flag"
-	"fmt"
 	"log"
 	"net/url"
 	"os"
 	"strings"
 
-	coap "github.com/dusanb94/coap-cli/coap"
+	coap "github.com/mainflux/coap-cli/coap"
 
 	gocoap "github.com/dustin/go-coap"
 )
@@ -61,7 +60,7 @@ func checkType(c, n, a, r *bool) (gocoap.COAPType, error) {
 
 func printMsg(m *gocoap.Message) {
 	if m != nil {
-		log.Printf("Type: %d\nCode: %s\nMessageID: %d\nToken: %s\nPayload: %s\n",
+		log.Printf("\nMESSAGE:\nType: %d\nCode: %s\nMessageID: %d\nToken: %s\nPayload: %s\n",
 			m.Type, m.Code.String(), m.MessageID, m.Token, m.Payload)
 	}
 }
@@ -119,8 +118,6 @@ func main() {
 			Value: *cf,
 		})
 	}
-
-	fmt.Println("sasa", []byte(*token))
 
 	res, err := client.Send(t, code, uint16(*id), []byte(*token), []byte(*d), opts)
 	if err != nil {
