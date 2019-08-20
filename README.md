@@ -3,8 +3,9 @@ Simple CoAP cli client written in Go.
 
 
 ## Usage
+Pre-built binary can be found here: https://github.com/mainflux/coap-cli/releases/tag/v0.1.0.
 When running, please provide following format:
-`go run` or, if compiled, `./binary_name` followed by method code (`get`, `put`, `post`, `delete`) and CoAP URL. After that, you can pass following flags:
+`coap-cli` followed by method code (`get`, `put`, `post`, `delete`) and CoAP URL. After that, you can pass following flags:
 
 | Flag  | Description                    | Default value                          |
 |-------|--------------------------------|----------------------------------------|
@@ -18,8 +19,8 @@ When running, please provide following format:
 # Examples:
 
 ```bash
-go run cmd/main.go get coap://localhost/channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/dusan\?authorization=1e1017e6-dee7-45b4-8a13-00e6afeb66eb -O
+coap-cli get coap://localhost/channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic\?authorization=1e1017e6-dee7-45b4-8a13-00e6afeb66eb -O
 ```
 ```bash
-go run cmd/main.go post coap://localhost/channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/dusan\?authorization=1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world"
+coap-cli post coap://localhost/channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic\?authorization=1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world"
 ```
