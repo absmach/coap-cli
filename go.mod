@@ -1,4 +1,4 @@
-module github.com/dusanb94/coap-cli
+module github.com/mainflux/coap-cli
 
 go 1.12
 
