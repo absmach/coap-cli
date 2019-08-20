@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net/url"
 	"os"
@@ -60,8 +61,8 @@ func checkType(c, n, a, r *bool) (gocoap.COAPType, error) {
 
 func printMsg(m *gocoap.Message) {
 	if m != nil {
-		log.Printf("Type: %d\nCode: %d\nMessageID: %d\nToken: %s\nPayload: %s\n",
-			m.Type, m.Code, m.MessageID, m.Token, m.Payload)
+		log.Printf("Type: %d\nCode: %s\nMessageID: %d\nToken: %s\nPayload: %s\n",
+			m.Type, m.Code.String(), m.MessageID, m.Token, m.Payload)
 	}
 }
 
@@ -84,10 +85,12 @@ func main() {
 	a := flag.Bool("ACK", false, "Acknowledgement")
 	r := flag.Bool("RST", false, "Reset")
 	o := flag.Bool("O", false, "Observe")
-
-	cf := flag.Int("CF", 0, "Content format")
-
+	// Default type is JSON.
+	cf := flag.Int("CF", 50, "Content format")
 	d := flag.String("d", "", "Message data")
+	id := flag.Uint("id", 0, "Message ID")
+	token := flag.String("token", "", "Message data")
+
 	flag.Parse()
 
 	t, err := checkType(c, n, a, r)
@@ -117,7 +120,9 @@ func main() {
 		})
 	}
 
-	res, err := client.Send(t, code, 12, nil, []byte(*d), opts)
+	fmt.Println("sasa", []byte(*token))
+
+	res, err := client.Send(t, code, uint16(*id), []byte(*token), []byte(*d), opts)
 	if err != nil {
 		log.Fatal("ERROR: ", err)
 	}

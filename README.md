@@ -6,14 +6,15 @@ Simple CoAP cli client written in Go.
 When running, please provide following format:
 `go run` or, if compiled, `./binary_name` followed by method code (`get`, `put`, `post`, `delete`) and CoAP URL. After that, you can pass following flags:
 
-| Flag | Description                    | Default value |
-|------|--------------------------------|---------------|
-| ACK  | Acknowledgement                | false         |
-| C    | Confirmable                    | false         |
-| NC   | Non-Confirmable                | false         |
-| O    | Observe                        | false         |
-| d    | Data to be sent in POST or PUT | ""            |
-
+| Flag  | Description                    | Default value                          |
+|-------|--------------------------------|----------------------------------------|
+| ACK   | Acknowledgement                | false                                  |
+| C     | Confirmable                    | false                                  |
+| NC    | Non-Confirmable                | false                                  |
+| O     | Observe                        | false                                  |
+| d     | Data to be sent in POST or PUT | ""                                     |
+| id    | Message ID                     | 0                                      |
+| token | Token                          | Byte array of empty string: [49 50 51] |
 # Examples:
 
 ```bash
