@@ -1,2 +1,4 @@
 github.com/dustin/go-coap v0.0.0-20170214053734-ddcc80675fa4 h1:+3t0PiNl/W3Cl4/+XmQ8gD1HQuw3ISaGHHmSBylNVJ8=
 github.com/dustin/go-coap v0.0.0-20170214053734-ddcc80675fa4/go.mod h1:as2rZ2aojRzZF8bGx1bPAn1yi9ICG6LwkiPOj6PBtjc=
+github.com/dustin/go-coap v0.0.0-20190908170653-752e0f79981e h1:oppjHFVTardH+VyOD32F9uBtgT5Wd/qVqEGcwj389Lc=
+github.com/dustin/go-coap v0.0.0-20190908170653-752e0f79981e/go.mod h1:as2rZ2aojRzZF8bGx1bPAn1yi9ICG6LwkiPOj6PBtjc=
