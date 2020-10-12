@@ -8,9 +8,8 @@ import (
 	"os"
 	"strings"
 
-	coap "github.com/mainflux/coap-cli/coap"
-
 	gocoap "github.com/dustin/go-coap"
+	coap "github.com/mainflux/coap-cli/coap"
 )
 
 const (

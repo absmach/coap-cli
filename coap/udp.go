@@ -12,7 +12,7 @@ import (
 const (
 	network   = "udp"
 	maxPktLen = 65536
-	defPort   = ":5683"
+	defPort   = ":5688"
 )
 
 var errInvalidScheme = errors.New("Invalid porotcol scheme")
