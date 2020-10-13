@@ -1,46 +1,67 @@
 package coap
 
 import (
-	"net/url"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"time"
 
-	gocoap "github.com/dustin/go-coap"
+	"github.com/plgd-dev/go-coap/v2/message"
+	"github.com/plgd-dev/go-coap/v2/message/codes"
+	"github.com/plgd-dev/go-coap/v2/udp"
+	"github.com/plgd-dev/go-coap/v2/udp/client"
+	"github.com/plgd-dev/go-coap/v2/udp/message/pool"
 )
 
 // Client represents CoAP client.
 type Client struct {
-	conn *conn
+	conn *client.ClientConn
 }
 
 // New returns new CoAP client connecting it to the server.
-func New(addr *url.URL) (Client, error) {
-	address, err := parseAddr(addr)
+func New(addr string) (Client, error) {
+	c, err := udp.Dial(addr)
 	if err != nil {
-		return Client{}, err
+		log.Fatalf("Error dialing: %v", err)
 	}
-	c, err := dial(address)
-	if err != nil {
-		return Client{}, err
-	}
+
 	return Client{conn: c}, nil
 }
 
 // Send send a message.
-func (c Client) Send(msgType gocoap.COAPType, msgCode gocoap.COAPCode, msgID uint16, token, payload []byte, opts []Option) (*gocoap.Message, error) {
-	msg := gocoap.Message{
-		Type:      msgType,
-		Code:      msgCode,
-		MessageID: msgID,
-		Token:     token,
-		Payload:   payload,
-	}
+func (c Client) Send(path string, msgCode codes.Code, cf message.MediaType, payload io.ReadSeeker, opts ...message.Option) (*pool.Message, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
 
-	for _, o := range opts {
-		msg.SetOption(o.ID, o.Value)
+	switch msgCode {
+	case codes.GET:
+		return c.conn.Get(ctx, path, opts...)
+	case codes.POST:
+		return c.conn.Post(ctx, path, cf, payload, opts...)
+	case codes.PUT:
+		return c.conn.Put(ctx, path, cf, payload, opts...)
+	case codes.DELETE:
+		return c.conn.Delete(ctx, path, opts...)
 	}
-	return c.conn.send(msg)
+	return nil, errors.New("Invalid message code")
 }
 
 // Receive receives a message.
-func (c Client) Receive() (*gocoap.Message, error) {
-	return c.conn.receive()
+func (c Client) Receive(path string, opts ...message.Option) (*client.Observation, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	return c.conn.Observe(ctx, path, func(res *pool.Message) {
+		fmt.Printf("\nRECEIVED OBSERVE: %v\n", res)
+		body, err := res.ReadBody()
+		if err != nil {
+			fmt.Println("Error reading message body: ", err)
+			return
+		}
+		if len(body) > 0 {
+			fmt.Println("Payload: ", string(body))
+		}
+	}, opts...)
 }
