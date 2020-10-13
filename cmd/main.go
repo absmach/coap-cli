@@ -88,6 +88,9 @@ func main() {
 		printMsg(res)
 		return
 	}
+	if code != codes.GET {
+		log.Fatal("Only GET requests accept observe option.")
+	}
 	obs, err := client.Receive(path, opts...)
 	if err != nil {
 		log.Fatal("Error observing resource: ", err)
