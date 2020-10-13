@@ -69,7 +69,6 @@ func main() {
 
 	flag.Parse()
 
-	fmt.Println(*h + ":" + *p)
 	client, err := coap.New(*h + ":" + *p)
 	if err != nil {
 		log.Fatal("Error creating client: ", err)
