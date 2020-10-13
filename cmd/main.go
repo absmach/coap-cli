@@ -1,16 +1,21 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
-	"net/url"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	coap "github.com/mainflux/coap-cli/coap"
-
-	gocoap "github.com/dustin/go-coap"
+	"github.com/plgd-dev/go-coap/v2/message"
+	coapmsg "github.com/plgd-dev/go-coap/v2/message"
+	"github.com/plgd-dev/go-coap/v2/message/codes"
+	"github.com/plgd-dev/go-coap/v2/udp/message/pool"
 )
 
 const (
@@ -20,48 +25,23 @@ const (
 	delete = "DELETE"
 )
 
-func parseCode(code string) (gocoap.COAPCode, error) {
+func parseCode(code string) (codes.Code, error) {
 	switch code {
 	case get:
-		return gocoap.GET, nil
+		return codes.GET, nil
 	case put:
-		return gocoap.PUT, nil
+		return codes.PUT, nil
 	case post:
-		return gocoap.POST, nil
+		return codes.POST, nil
 	case delete:
-		return gocoap.DELETE, nil
+		return codes.DELETE, nil
 	}
 	return 0, errors.New("Message can be GET, POST, PUT or DELETE")
 }
 
-func checkType(c, n, a, r *bool) (gocoap.COAPType, error) {
-	arr := []bool{*c, *n, *a, *r}
-	var counter int
-	for _, v := range arr {
-		if v {
-			counter++
-		}
-	}
-	if counter > 1 {
-		return 0, errors.New("invalid message type")
-	}
-	switch {
-	case *c:
-		return gocoap.Confirmable, nil
-	case *n:
-		return gocoap.NonConfirmable, nil
-	case *a:
-		return gocoap.Acknowledgement, nil
-	case *r:
-		return gocoap.Reset, nil
-	}
-	return gocoap.Confirmable, nil
-}
-
-func printMsg(m *gocoap.Message) {
+func printMsg(m *pool.Message) {
 	if m != nil {
-		log.Printf("\nMESSAGE:\nType: %d\nCode: %s\nMessageID: %d\nToken: %s\nPayload: %s\n",
-			m.Type, m.Code.String(), m.MessageID, m.Token, m.Payload)
+		log.Printf("\nMESSAGE:\n %v", m)
 	}
 }
 
@@ -71,85 +51,56 @@ func main() {
 	}
 	code, err := parseCode(strings.ToUpper(os.Args[1]))
 	if err != nil {
-		log.Fatal("ERROR: ", err)
+		log.Fatal("error: ", err)
 	}
 	if len(os.Args) < 3 {
 		log.Fatal("Please enter valid CoAP URL")
 	}
-	addr := os.Args[2]
+	path := os.Args[2]
 	os.Args = os.Args[2:]
 
-	c := flag.Bool("C", false, "Confirmable")
-	n := flag.Bool("NC", false, "Non-confirmable")
-	a := flag.Bool("ACK", false, "Acknowledgement")
-	r := flag.Bool("RST", false, "Reset")
-	o := flag.Bool("O", false, "Observe")
+	o := flag.Bool("o", false, "Observe")
+	h := flag.String("h", "localhost", "Host")
+	p := flag.String("p", "5683", "Port")
 	// Default type is JSON.
-	cf := flag.Int("CF", 50, "Content format")
+	cf := flag.Int("q", 50, "Content format")
 	d := flag.String("d", "", "Message data")
-	id := flag.Uint("id", 0, "Message ID")
-	token := flag.String("token", "", "Message data")
+	a := flag.String("auth", "", "Auth token")
 
 	flag.Parse()
 
-	t, err := checkType(c, n, a, r)
+	fmt.Println(*h + ":" + *p)
+	client, err := coap.New(*h + ":" + *p)
 	if err != nil {
-		log.Fatal("ERR TYPE: ", err)
+		log.Fatal("Error creating client: ", err)
 	}
-	address, err := url.Parse(addr)
-	if err != nil {
-		log.Fatal("ERR PARSING ADDR:", err)
-	}
-	client, err := coap.New(address)
-	if err != nil {
-		log.Fatal("ERROR CREATING CLIENT: ", err)
+	var opts coapmsg.Options
+	if a != nil {
+		opts = append(opts, coapmsg.Option{ID: coapmsg.URIQuery, Value: []byte(fmt.Sprintf("auth=%s", *a))})
 	}
 
-	opts := coap.ParseOptions(address)
-	if *o {
-		opts = append(opts, coap.Option{
-			ID:    gocoap.Observe,
-			Value: 0,
-		})
-	}
-	if *cf != 0 {
-		opts = append(opts, coap.Option{
-			ID:    gocoap.ContentFormat,
-			Value: *cf,
-		})
-	}
+	if o == nil {
+		pld := strings.NewReader(*d)
 
-	res, err := client.Send(t, code, uint16(*id), []byte(*token), []byte(*d), opts)
+		res, err := client.Send(path, code, message.MediaType(*cf), pld, opts...)
+		if err != nil {
+			log.Fatal("Error sending message: ", err)
+		}
+		printMsg(res)
+		return
+	}
+	obs, err := client.Receive(path, opts...)
 	if err != nil {
-		log.Fatal("ERROR: ", err)
+		log.Fatal("Error observing resource: ", err)
 	}
-	printMsg(res)
-	if res == nil {
-		os.Exit(0)
-	}
-	switch res.Code {
-	case gocoap.Forbidden, gocoap.BadRequest, gocoap.InternalServerError, gocoap.NotFound:
-		log.Fatalf("Response code: %s", res.Code)
-	}
-	if *o {
-		if code != gocoap.GET {
-			log.Fatalln("Can observe non GET requests.")
-		}
-		msgs := make(chan *gocoap.Message)
-		go func() {
-			for {
-				msg, err := client.Receive()
-				if err != nil {
-					log.Fatal("ERROR RECEIVING: ", err)
-				}
-				msgs <- msg
-			}
-		}()
-		for {
-			select {
-			case m := <-msgs:
-				printMsg(m)
-			}
-		}
-	}
+	errs := make(chan error, 2)
+	go func() {
+		c := make(chan os.Signal)
+		signal.Notify(c, syscall.SIGINT)
+		errs <- fmt.Errorf("%s", <-c)
+	}()
+
+	err = <-errs
+	obs.Cancel(context.Background())
+	log.Fatal("Observation terminated: ", err)
 }
