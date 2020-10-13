@@ -3,7 +3,7 @@ Simple CoAP cli client written in Go.
 
 
 ## Usage
-Pre-built binary can be found here: https://github.com/mainflux/coap-cli/releases/tag/v0.2.0.
+Pre-built binary can be found here: https://github.com/mainflux/coap-cli/releases/tag/v0.3.0.
 When running, please provide following format:
 `coap-cli` followed by method code (`get`, `put`, `post`, `delete`) and CoAP URL. After that, you can pass following flags:
 
