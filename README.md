@@ -7,14 +7,14 @@ Pre-built binary can be found here: https://github.com/mainflux/coap-cli/release
 When running, please provide following format:
 `coap-cli` followed by method code (`get`, `put`, `post`, `delete`) and CoAP URL. After that, you can pass following flags:
 
-| Flag | Description                                    | Default value |
-| ---- | ---------------------------------------------- | ------------- |
-| o    | Observe   option - only valid with Get request | false         |
-| auth | Auth option sent as URI Query                  | ""            |
-| h    | Host                                           | "localhost"   |
-| p    | port                                           | "5683"        |
-| d    | Data to be sent in POST or PUT                 | ""            |
-| cf   | Content format                                 | 50 - JSON     |
+| Flag | Description                                    | Default value    |
+| ---- | ---------------------------------------------- | ---------------- |
+| o    | Observe   option - only valid with Get request | false            |
+| auth | Auth option sent as URI Query                  | ""               |
+| h    | Host                                           | "localhost"      |
+| p    | port                                           | "5683"           |
+| d    | Data to be sent in POST or PUT                 | ""               |
+| cf   | Content format                                 | 50 (JSON format) |
 # Examples:
 
 ```bash
