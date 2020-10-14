@@ -78,7 +78,7 @@ func main() {
 		opts = append(opts, coapmsg.Option{ID: coapmsg.URIQuery, Value: []byte(fmt.Sprintf("auth=%s", *a))})
 	}
 
-	if o == nil {
+	if o == nil || (!*o) {
 		pld := strings.NewReader(*d)
 
 		res, err := client.Send(path, code, message.MediaType(*cf), pld, opts...)
