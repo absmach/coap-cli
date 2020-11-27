@@ -9,7 +9,7 @@ When running, please provide following format:
 
 | Flag | Description                                    | Default value    |
 | ---- | ---------------------------------------------- | ---------------- |
-| o    | observe   option - only valid with Get request | false            |
+| o    | observe   option - only valid with GET request | false            |
 | auth | auth option sent as URI Query                  | ""               |
 | h    | host                                           | "localhost"      |
 | p    | port                                           | "5683"           |
