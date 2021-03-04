@@ -16,7 +16,7 @@ github.com/pion/logging
 github.com/pion/transport/deadline
 github.com/pion/transport/packetio
 github.com/pion/transport/replaydetector
-# github.com/plgd-dev/go-coap/v2 v2.0.4
+# github.com/plgd-dev/go-coap/v2 v2.4.0
 ## explicit
 github.com/plgd-dev/go-coap/v2/message
 github.com/plgd-dev/go-coap/v2/message/codes
@@ -25,13 +25,16 @@ github.com/plgd-dev/go-coap/v2/message/pool
 github.com/plgd-dev/go-coap/v2/mux
 github.com/plgd-dev/go-coap/v2/net
 github.com/plgd-dev/go-coap/v2/net/blockwise
-github.com/plgd-dev/go-coap/v2/net/keepalive
+github.com/plgd-dev/go-coap/v2/net/monitor/inactivity
+github.com/plgd-dev/go-coap/v2/net/observation
 github.com/plgd-dev/go-coap/v2/udp
 github.com/plgd-dev/go-coap/v2/udp/client
 github.com/plgd-dev/go-coap/v2/udp/message
 github.com/plgd-dev/go-coap/v2/udp/message/pool
 # github.com/plgd-dev/kit v0.0.0-20200819113605-d5fcf3e94f63
 github.com/plgd-dev/kit/sync
+# go.uber.org/atomic v1.6.0
+go.uber.org/atomic
 # golang.org/x/crypto v0.0.0-20200510223506-06a226fb4e37
 golang.org/x/crypto/cryptobyte
 golang.org/x/crypto/cryptobyte/asn1

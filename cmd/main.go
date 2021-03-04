@@ -92,7 +92,7 @@ func main() {
 	h := flag.String("h", "localhost", "Host")
 	p := flag.String("p", "5683", "Port")
 	// Default type is JSON.
-	cf := flag.Int("q", 50, "Content format")
+	cf := flag.Int("cf", 50, "Content format")
 	d := flag.String("d", "", "Message data")
 	a := flag.String("auth", "", "Auth token")
 	flag.Parse()
