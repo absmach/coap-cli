@@ -1,4 +1,4 @@
-# Coap-cli
+# CoAP CLI
 Simple CoAP cli client written in Go.
 
 
