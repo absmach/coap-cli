@@ -15,6 +15,8 @@ import (
 	"github.com/plgd-dev/go-coap/v2/udp/message/pool"
 )
 
+var errCode = errors.New("invalid message code")
+
 // Client represents CoAP client.
 type Client struct {
 	conn *client.ClientConn
@@ -45,15 +47,12 @@ func (c Client) Send(path string, msgCode codes.Code, cf message.MediaType, payl
 	case codes.DELETE:
 		return c.conn.Delete(ctx, path, opts...)
 	}
-	return nil, errors.New("Invalid message code")
+	return nil, errCode
 }
 
 // Receive receives a message.
 func (c Client) Receive(path string, opts ...message.Option) (*client.Observation, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-
-	return c.conn.Observe(ctx, path, func(res *pool.Message) {
+	return c.conn.Observe(context.Background(), path, func(res *pool.Message) {
 		fmt.Printf("\nRECEIVED OBSERVE: %v\n", res)
 		body, err := res.ReadBody()
 		if err != nil {

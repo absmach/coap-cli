@@ -5,15 +5,14 @@ import (
 )
 
 type KeepAlive struct {
-	pongToken uint64
-	sendToken uint64
-	numFails  uint32
-
-	maxRetries uint32
+	pongToken  uint64
 	onInactive OnInactiveFunc
 
 	sendPing   func(cc ClientConn, receivePong func()) (func(), error)
 	cancelPing func()
+	numFails   uint32
+
+	maxRetries uint32
 }
 
 func NewKeepAlive(maxRetries uint32, onInactive OnInactiveFunc, sendPing func(cc ClientConn, receivePong func()) (func(), error)) *KeepAlive {
@@ -30,7 +29,7 @@ func (m *KeepAlive) OnInactive(cc ClientConn) {
 		m.cancelPing()
 		m.cancelPing = nil
 	}
-	if v >= m.maxRetries {
+	if v > m.maxRetries {
 		m.onInactive(cc)
 		return
 	}
