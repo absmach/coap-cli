@@ -130,7 +130,8 @@ func main() {
 		errs <- fmt.Errorf("%s", <-c)
 	}()
 
-	err = <-errs
-	obs.Cancel(context.Background())
+	<-errs
+	fmt.Println("Canceling...")
+	err = obs.Cancel(context.Background())
 	log.Fatal("Observation terminated: ", err)
 }
