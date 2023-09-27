@@ -1,67 +1,127 @@
-package coap
+package dtls
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"io"
-	"log"
 	"time"
 
-	"github.com/plgd-dev/go-coap/v2/message"
-	"github.com/plgd-dev/go-coap/v2/message/codes"
-	"github.com/plgd-dev/go-coap/v2/udp"
-	"github.com/plgd-dev/go-coap/v2/udp/client"
-	"github.com/plgd-dev/go-coap/v2/udp/message/pool"
+	"github.com/pion/dtls/v2"
+	dtlsnet "github.com/pion/dtls/v2/pkg/net"
+	"github.com/plgd-dev/go-coap/v3/dtls/server"
+	"github.com/plgd-dev/go-coap/v3/message"
+	"github.com/plgd-dev/go-coap/v3/message/codes"
+	"github.com/plgd-dev/go-coap/v3/message/pool"
+	coapNet "github.com/plgd-dev/go-coap/v3/net"
+	"github.com/plgd-dev/go-coap/v3/net/blockwise"
+	"github.com/plgd-dev/go-coap/v3/net/monitor/inactivity"
+	"github.com/plgd-dev/go-coap/v3/net/responsewriter"
+	"github.com/plgd-dev/go-coap/v3/options"
+	"github.com/plgd-dev/go-coap/v3/udp"
+	udpClient "github.com/plgd-dev/go-coap/v3/udp/client"
 )
 
-// Client represents CoAP client.
-type Client struct {
-	conn *client.ClientConn
-}
+var DefaultConfig = func() udpClient.Config {
+	cfg := udpClient.DefaultConfig
+	cfg.Handler = func(w *responsewriter.ResponseWriter[*udpClient.Conn], r *pool.Message) {
+		switch r.Code() {
+		case codes.POST, codes.PUT, codes.GET, codes.DELETE:
+			if err := w.SetResponse(codes.NotFound, message.TextPlain, nil); err != nil {
+				cfg.Errors(fmt.Errorf("dtls client: cannot set response: %w", err))
+			}
+		}
+	}
+	return cfg
+}()
 
-// New returns new CoAP client connecting it to the server.
-func New(addr string) (Client, error) {
-	c, err := udp.Dial(addr)
+// Dial creates a client connection to the given target.
+func Dial(target string, dtlsCfg *dtls.Config, opts ...udp.Option) (*udpClient.Conn, error) {
+	cfg := DefaultConfig
+	for _, o := range opts {
+		o.UDPClientApply(&cfg)
+	}
+
+	c, err := cfg.Dialer.DialContext(cfg.Ctx, cfg.Net, target)
 	if err != nil {
-		log.Fatalf("Error dialing: %v", err)
+		return nil, err
 	}
 
-	return Client{conn: c}, nil
-}
-
-// Send send a message.
-func (c Client) Send(path string, msgCode codes.Code, cf message.MediaType, payload io.ReadSeeker, opts ...message.Option) (*pool.Message, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-
-	switch msgCode {
-	case codes.GET:
-		return c.conn.Get(ctx, path, opts...)
-	case codes.POST:
-		return c.conn.Post(ctx, path, cf, payload, opts...)
-	case codes.PUT:
-		return c.conn.Put(ctx, path, cf, payload, opts...)
-	case codes.DELETE:
-		return c.conn.Delete(ctx, path, opts...)
+	conn, err := dtls.Client(dtlsnet.PacketConnFromConn(c), c.RemoteAddr(), dtlsCfg)
+	if err != nil {
+		return nil, err
 	}
-	return nil, errors.New("Invalid message code")
+	opts = append(opts, options.WithCloseSocket())
+	return Client(conn, opts...), nil
 }
 
-// Receive receives a message.
-func (c Client) Receive(path string, opts ...message.Option) (*client.Observation, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-
-	return c.conn.Observe(ctx, path, func(res *pool.Message) {
-		fmt.Printf("\nRECEIVED OBSERVE: %v\n", res)
-		body, err := res.ReadBody()
-		if err != nil {
-			fmt.Println("Error reading message body: ", err)
+// Client creates client over dtls connection.
+func Client(conn *dtls.Conn, opts ...udp.Option) *udpClient.Conn {
+	cfg := DefaultConfig
+	for _, o := range opts {
+		o.UDPClientApply(&cfg)
+	}
+	if cfg.Errors == nil {
+		cfg.Errors = func(error) {
+			// default no-op
+		}
+	}
+	if cfg.CreateInactivityMonitor == nil {
+		cfg.CreateInactivityMonitor = func() udpClient.InactivityMonitor {
+			return inactivity.NewNilMonitor[*udpClient.Conn]()
+		}
+	}
+	if cfg.MessagePool == nil {
+		cfg.MessagePool = pool.New(0, 0)
+	}
+	errorsFunc := cfg.Errors
+	cfg.Errors = func(err error) {
+		if coapNet.IsCancelOrCloseError(err) {
+			// this error was produced by cancellation context or closing connection.
 			return
 		}
-		if len(body) > 0 {
-			fmt.Println("Payload: ", string(body))
+		errorsFunc(fmt.Errorf("dtls: %v: %w", conn.RemoteAddr(), err))
+	}
+
+	createBlockWise := func(cc *udpClient.Conn) *blockwise.BlockWise[*udpClient.Conn] {
+		return nil
+	}
+	if cfg.BlockwiseEnable {
+		createBlockWise = func(cc *udpClient.Conn) *blockwise.BlockWise[*udpClient.Conn] {
+			v := cc
+			return blockwise.New(
+				v,
+				cfg.BlockwiseTransferTimeout,
+				cfg.Errors,
+				func(token message.Token) (*pool.Message, bool) {
+					return v.GetObservationRequest(token)
+				},
+			)
 		}
-	}, opts...)
+	}
+
+	monitor := cfg.CreateInactivityMonitor()
+	l := coapNet.NewConn(conn)
+	session := server.NewSession(cfg.Ctx,
+		l,
+		cfg.MaxMessageSize,
+		cfg.MTU,
+		cfg.CloseSocket,
+	)
+	cc := udpClient.NewConn(session,
+		createBlockWise,
+		monitor,
+		&cfg,
+	)
+
+	cfg.PeriodicRunner(func(now time.Time) bool {
+		cc.CheckExpirations(now)
+		return cc.Context().Err() == nil
+	})
+
+	go func() {
+		err := cc.Run()
+		if err != nil {
+			cfg.Errors(err)
+		}
+	}()
+
+	return cc
 }

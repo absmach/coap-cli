@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 The Pion community <https://pion.ly>
+// SPDX-License-Identifier: MIT
+
+//go:build go1.14
 // +build go1.14
 
 package dtls
@@ -6,8 +10,12 @@ import (
 	"crypto/tls"
 )
 
+// VersionDTLS12 is the DTLS version in the same style as
+// VersionTLSXX from crypto/tls
+const VersionDTLS12 = 0xfefd
+
 // Convert from our cipherSuite interface to a tls.CipherSuite struct
-func toTLSCipherSuite(c cipherSuite) *tls.CipherSuite {
+func toTLSCipherSuite(c CipherSuite) *tls.CipherSuite {
 	return &tls.CipherSuite{
 		ID:                uint16(c.ID()),
 		Name:              c.String(),
