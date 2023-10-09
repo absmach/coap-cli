@@ -7,10 +7,6 @@ github.com/hashicorp/errwrap
 # github.com/hashicorp/go-multierror v1.1.1
 ## explicit; go 1.13
 github.com/hashicorp/go-multierror
-# github.com/mainflux/coap-cli v0.3.3
-## explicit; go 1.21
-# github.com/patrickmn/go-cache v2.1.0+incompatible
-## explicit
 # github.com/pion/dtls/v2 v2.2.8-0.20230905141523-2b584af66577
 ## explicit; go 1.13
 github.com/pion/dtls/v2
@@ -44,15 +40,9 @@ github.com/pion/transport/v3/netctx
 github.com/pion/transport/v3/packetio
 github.com/pion/transport/v3/replaydetector
 github.com/pion/transport/v3/udp
-# github.com/plgd-dev/go-coap/v2 v2.4.0
-## explicit; go 1.13
-github.com/plgd-dev/go-coap/v2/message
-github.com/plgd-dev/go-coap/v2/message/codes
-github.com/plgd-dev/go-coap/v2/message/pool
-github.com/plgd-dev/go-coap/v2/udp/message
-github.com/plgd-dev/go-coap/v2/udp/message/pool
 # github.com/plgd-dev/go-coap/v3 v3.1.5
 ## explicit; go 1.18
+github.com/plgd-dev/go-coap/v3/dtls
 github.com/plgd-dev/go-coap/v3/dtls/server
 github.com/plgd-dev/go-coap/v3/message
 github.com/plgd-dev/go-coap/v3/message/codes
@@ -82,8 +72,6 @@ github.com/plgd-dev/go-coap/v3/udp
 github.com/plgd-dev/go-coap/v3/udp/client
 github.com/plgd-dev/go-coap/v3/udp/coder
 github.com/plgd-dev/go-coap/v3/udp/server
-# github.com/plgd-dev/kit v0.0.0-20200819113605-d5fcf3e94f63
-## explicit; go 1.13
 # go.uber.org/atomic v1.11.0
 ## explicit; go 1.18
 go.uber.org/atomic

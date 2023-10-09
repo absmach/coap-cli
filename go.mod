@@ -4,7 +4,6 @@ go 1.21
 
 require (
 	github.com/pion/dtls/v2 v2.2.8-0.20230905141523-2b584af66577
-	github.com/plgd-dev/go-coap/v2 v2.4.0
 	github.com/plgd-dev/go-coap/v3 v3.1.5
 )
 

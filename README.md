@@ -15,11 +15,13 @@ When running, please provide following format:
 | p    | port                                           | "5683"           |
 | d    | data to be sent in POST or PUT                 | ""               |
 | cf   | content format                                 | 50 (JSON format) |
+|tls   | dtls support                                   | false            |
 
+The dtls configuration currently supports PKI certificates. Place the relevant certificates in the certs folder before building.
 ## Examples:
 
 ```bash
-coap-cli get channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -o
+coap-cli get channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -o -tls
 ```
 ```bash
 coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world"
