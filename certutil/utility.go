@@ -1,4 +1,4 @@
-package cert_utility
+package certutil
 
 import (
 	"context"
@@ -17,31 +17,21 @@ import (
 )
 
 // Create pion dtls config from certificates.
-func CreateClientConfig(ctx context.Context) (*piondtls.Config, error) {
-	clientKeyBytes := make([]byte, 2048)
-	clientCrtBytes := make([]byte, 2048)
-	caBytes := make([]byte, 2048)
-
-	kb, err := os.Open("../certs/client.key")
+func CreateClientConfig(ctx context.Context, certPath string) (*piondtls.Config, error) {
+	clientKeyBytes, err := os.ReadFile(certPath + "/client.key")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer kb.Close()
-	kb.Read(clientKeyBytes)
 
-	cb, err := os.Open("../certs/client.crt")
+	clientCrtBytes, err := os.ReadFile(certPath + "/client.crt")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer cb.Close()
-	cb.Read(clientCrtBytes)
 
-	cab, err := os.Open("../certs/ca.crt")
+	caBytes, err := os.ReadFile(certPath + "/ca.crt")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer cab.Close()
-	cab.Read(caBytes)
 
 	certificate, err := LoadKeyAndCertificate(clientKeyBytes, clientCrtBytes)
 	if err != nil {

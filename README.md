@@ -15,9 +15,13 @@ When running, please provide following format:
 | p    | port                                           | "5683"           |
 | d    | data to be sent in POST or PUT                 | ""               |
 | cf   | content format                                 | 50 (JSON format) |
-|tls   | dtls support                                   | false            |
 
-The dtls configuration currently supports PKI certificates. Place the relevant certificates in the certs folder before building.
+The cli offers DTLS support with PKI certificates.Export the path to the certificate folder with the name `CERT_PATH` before build to enable the DTLS configuration.
+
+```bash
+export CERT_PATH="../certs"
+make 
+```
 ## Examples:
 
 ```bash

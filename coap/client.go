@@ -8,7 +8,7 @@ import (
 	"log"
 	"time"
 
-	cert_utility "github.com/mainflux/coap-cli/cert_utility"
+	certutil "github.com/mainflux/coap-cli/certutil"
 
 	"github.com/plgd-dev/go-coap/v3/dtls"
 	"github.com/plgd-dev/go-coap/v3/message"
@@ -23,26 +23,34 @@ type Client struct {
 	conn *client.Conn
 }
 
+// Observation interface
+type NewObservation interface {
+	Cancel(ctx context.Context, opts ...message.Option) error
+	Canceled() bool
+}
+
 // New returns new CoAP client connecting it to the server.
-func New(addr string, to_dtls bool) (Client, error) {
-	if !to_dtls { // UDP
-		c, err := udp.Dial(addr)
-		if err != nil {
-			log.Fatalf("Error dialing: %v", err)
-		}
-		return Client{conn: c}, nil
-	} else { // DTLS
-		config, err := cert_utility.CreateClientConfig(context.Background())
+func New(addr string, certPath string) (Client, error) {
+	switch {
+	case certPath != "":
+		config, err := certutil.CreateClientConfig(context.Background(), certPath)
 		if err != nil {
 			log.Fatalln(err)
 		}
-		co, err := dtls.Dial("localhost:5688", config)
+		co, err := dtls.Dial("localhost:"+addr, config)
 		if err != nil {
 			log.Fatalf("Error dialing: %v", err)
 		}
 		return Client{conn: co}, err
-	}
+	default:
+		c, err := udp.Dial(addr)
+		if err != nil {
+			log.Fatalf("Error dialing: %v", err)
+		}
+		fmt.Println("No dtls")
+		return Client{conn: c}, nil
 
+	}
 }
 
 // Send send a message.
@@ -64,10 +72,7 @@ func (c Client) Send(path string, msgCode codes.Code, cf message.MediaType, payl
 }
 
 // Receive receives a message.
-func (c Client) Receive(path string, opts ...message.Option) (interface {
-	Cancel(ctx context.Context, opts ...message.Option) error
-	Canceled() bool
-}, error) {
+func (c Client) Receive(path string, opts ...message.Option) (NewObservation, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
