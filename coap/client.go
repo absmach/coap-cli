@@ -37,7 +37,7 @@ func New(addr string, certPath string) (Client, error) {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		co, err := dtls.Dial("localhost:"+addr, config)
+		co, err := dtls.Dial(addr, config)
 		if err != nil {
 			log.Fatalf("Error dialing: %v", err)
 		}
@@ -47,7 +47,6 @@ func New(addr string, certPath string) (Client, error) {
 		if err != nil {
 			log.Fatalf("Error dialing: %v", err)
 		}
-		fmt.Println("No dtls")
 		return Client{conn: c}, nil
 
 	}
