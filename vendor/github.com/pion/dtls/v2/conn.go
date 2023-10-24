@@ -1,7 +1,12 @@
+// SPDX-FileCopyrightText: 2023 The Pion community <https://pion.ly>
+// SPDX-License-Identifier: MIT
+
 package dtls
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -10,43 +15,58 @@ import (
 	"time"
 
 	"github.com/pion/dtls/v2/internal/closer"
-	"github.com/pion/dtls/v2/internal/net/connctx"
+	"github.com/pion/dtls/v2/pkg/crypto/elliptic"
+	"github.com/pion/dtls/v2/pkg/crypto/signaturehash"
+	"github.com/pion/dtls/v2/pkg/protocol"
+	"github.com/pion/dtls/v2/pkg/protocol/alert"
+	"github.com/pion/dtls/v2/pkg/protocol/handshake"
+	"github.com/pion/dtls/v2/pkg/protocol/recordlayer"
 	"github.com/pion/logging"
-	"github.com/pion/transport/deadline"
-	"github.com/pion/transport/replaydetector"
+	"github.com/pion/transport/v3/deadline"
+	"github.com/pion/transport/v3/netctx"
+	"github.com/pion/transport/v3/replaydetector"
 )
 
 const (
 	initialTickerInterval = time.Second
 	cookieLength          = 20
-	defaultNamedCurve     = namedCurveX25519
+	sessionLength         = 32
+	defaultNamedCurve     = elliptic.X25519
 	inboundBufferSize     = 8192
 	// Default replay protection window is specified by RFC 6347 Section 4.1.2.6
 	defaultReplayProtectionWindow = 64
 )
 
-var invalidKeyingLabels = map[string]bool{
-	"client finished": true,
-	"server finished": true,
-	"master secret":   true,
-	"key expansion":   true,
+func invalidKeyingLabels() map[string]bool {
+	return map[string]bool{
+		"client finished": true,
+		"server finished": true,
+		"master secret":   true,
+		"key expansion":   true,
+	}
+}
+
+type addrPkt struct {
+	rAddr net.Addr
+	data  []byte
 }
 
 // Conn represents a DTLS connection
 type Conn struct {
-	lock           sync.RWMutex     // Internal lock (must not be public)
-	nextConn       connctx.ConnCtx  // Embedded Conn, typically a udpconn we read/write from
-	fragmentBuffer *fragmentBuffer  // out-of-order and missing fragment handling
-	handshakeCache *handshakeCache  // caching of handshake messages for verifyData generation
-	decrypted      chan interface{} // Decrypted Application Data or error, pull by calling `Read`
-
-	state State // Internal state
+	lock           sync.RWMutex      // Internal lock (must not be public)
+	nextConn       netctx.PacketConn // Embedded Conn, typically a udpconn we read/write from
+	fragmentBuffer *fragmentBuffer   // out-of-order and missing fragment handling
+	handshakeCache *handshakeCache   // caching of handshake messages for verifyData generation
+	decrypted      chan interface{}  // Decrypted Application Data or error, pull by calling `Read`
+	rAddr          net.Addr
+	state          State // Internal state
 
 	maximumTransmissionUnit int
+	paddingLengthGenerator  func(uint) uint
 
 	handshakeCompletedSuccessfully atomic.Value
 
-	encryptedPackets [][]byte
+	encryptedPackets []addrPkt
 
 	connectionClosedByUser bool
 	closeLock              sync.Mutex
@@ -68,9 +88,8 @@ type Conn struct {
 	replayProtectionWindow uint
 }
 
-func createConn(ctx context.Context, nextConn net.Conn, config *Config, isClient bool, initialState *State) (*Conn, error) {
-	err := validateConfig(config)
-	if err != nil {
+func createConn(ctx context.Context, nextConn net.PacketConn, rAddr net.Addr, config *Config, isClient bool, initialState *State) (*Conn, error) {
+	if err := validateConfig(config); err != nil {
 		return nil, err
 	}
 
@@ -78,12 +97,12 @@ func createConn(ctx context.Context, nextConn net.Conn, config *Config, isClient
 		return nil, errNilNextConn
 	}
 
-	cipherSuites, err := parseCipherSuites(config.CipherSuites, config.PSK == nil, config.PSK != nil)
+	cipherSuites, err := parseCipherSuites(config.CipherSuites, config.CustomCipherSuites, config.includeCertificateSuites(), config.PSK != nil)
 	if err != nil {
 		return nil, err
 	}
 
-	signatureSchemes, err := parseSignatureSchemes(config.SignatureSchemes, config.InsecureHashes)
+	signatureSchemes, err := signaturehash.ParseSignatureSchemes(config.SignatureSchemes, config.InsecureHashes)
 	if err != nil {
 		return nil, err
 	}
@@ -110,11 +129,18 @@ func createConn(ctx context.Context, nextConn net.Conn, config *Config, isClient
 		replayProtectionWindow = defaultReplayProtectionWindow
 	}
 
+	paddingLengthGenerator := config.PaddingLengthGenerator
+	if paddingLengthGenerator == nil {
+		paddingLengthGenerator = func(uint) uint { return 0 }
+	}
+
 	c := &Conn{
-		nextConn:                connctx.New(nextConn),
+		rAddr:                   rAddr,
+		nextConn:                netctx.NewPacketConn(nextConn),
 		fragmentBuffer:          newFragmentBuffer(),
 		handshakeCache:          newHandshakeCache(),
 		maximumTransmissionUnit: mtu,
+		paddingLengthGenerator:  paddingLengthGenerator,
 
 		decrypted: make(chan interface{}, 1),
 		log:       logger,
@@ -138,16 +164,15 @@ func createConn(ctx context.Context, nextConn net.Conn, config *Config, isClient
 	c.setLocalEpoch(0)
 
 	serverName := config.ServerName
-	// Use host from conn address when serverName is not provided
-	if isClient && serverName == "" && nextConn.RemoteAddr() != nil {
-		remoteAddr := nextConn.RemoteAddr().String()
-		var host string
-		host, _, err = net.SplitHostPort(remoteAddr)
-		if err != nil {
-			serverName = remoteAddr
-		} else {
-			serverName = host
-		}
+	// Do not allow the use of an IP address literal as an SNI value.
+	// See RFC 6066, Section 3.
+	if net.ParseIP(serverName) != nil {
+		serverName = ""
+	}
+
+	curves := config.EllipticCurves
+	if len(curves) == 0 {
+		curves = defaultCurves
 	}
 
 	hsCfg := &handshakeConfig{
@@ -158,15 +183,36 @@ func createConn(ctx context.Context, nextConn net.Conn, config *Config, isClient
 		extendedMasterSecret:        config.ExtendedMasterSecret,
 		localSRTPProtectionProfiles: config.SRTPProtectionProfiles,
 		serverName:                  serverName,
+		supportedProtocols:          config.SupportedProtocols,
 		clientAuth:                  config.ClientAuth,
 		localCertificates:           config.Certificates,
 		insecureSkipVerify:          config.InsecureSkipVerify,
 		verifyPeerCertificate:       config.VerifyPeerCertificate,
+		verifyConnection:            config.VerifyConnection,
 		rootCAs:                     config.RootCAs,
 		clientCAs:                   config.ClientCAs,
+		customCipherSuites:          config.CustomCipherSuites,
 		retransmitInterval:          workerInterval,
 		log:                         logger,
 		initialEpoch:                0,
+		keyLogWriter:                config.KeyLogWriter,
+		sessionStore:                config.SessionStore,
+		ellipticCurves:              curves,
+		localGetCertificate:         config.GetCertificate,
+		localGetClientCertificate:   config.GetClientCertificate,
+		insecureSkipHelloVerify:     config.InsecureSkipVerifyHello,
+		connectionIDGenerator:       config.ConnectionIDGenerator,
+	}
+
+	// rfc5246#section-7.4.3
+	// In addition, the hash and signature algorithms MUST be compatible
+	// with the key in the server's end-entity certificate.
+	if !isClient {
+		cert, err := hsCfg.getCertificate(&ClientHelloInfo{})
+		if err != nil && !errors.Is(err, errNoCertificates) {
+			return nil, err
+		}
+		hsCfg.localCipherSuites = filterCipherSuitesForCertificate(cert, cipherSuites)
 	}
 
 	var initialFlight flightVal
@@ -194,7 +240,7 @@ func createConn(ctx context.Context, nextConn net.Conn, config *Config, isClient
 		return nil, err
 	}
 
-	c.log.Trace(fmt.Sprintf("Handshake Completed"))
+	c.log.Trace("Handshake Completed")
 
 	return c, nil
 }
@@ -202,44 +248,49 @@ func createConn(ctx context.Context, nextConn net.Conn, config *Config, isClient
 // Dial connects to the given network address and establishes a DTLS connection on top.
 // Connection handshake will timeout using ConnectContextMaker in the Config.
 // If you want to specify the timeout duration, use DialWithContext() instead.
-func Dial(network string, raddr *net.UDPAddr, config *Config) (*Conn, error) {
+func Dial(network string, rAddr *net.UDPAddr, config *Config) (*Conn, error) {
 	ctx, cancel := config.connectContextMaker()
 	defer cancel()
 
-	return DialWithContext(ctx, network, raddr, config)
+	return DialWithContext(ctx, network, rAddr, config)
 }
 
 // Client establishes a DTLS connection over an existing connection.
 // Connection handshake will timeout using ConnectContextMaker in the Config.
 // If you want to specify the timeout duration, use ClientWithContext() instead.
-func Client(conn net.Conn, config *Config) (*Conn, error) {
+func Client(conn net.PacketConn, rAddr net.Addr, config *Config) (*Conn, error) {
 	ctx, cancel := config.connectContextMaker()
 	defer cancel()
 
-	return ClientWithContext(ctx, conn, config)
+	return ClientWithContext(ctx, conn, rAddr, config)
 }
 
 // Server listens for incoming DTLS connections.
 // Connection handshake will timeout using ConnectContextMaker in the Config.
 // If you want to specify the timeout duration, use ServerWithContext() instead.
-func Server(conn net.Conn, config *Config) (*Conn, error) {
+func Server(conn net.PacketConn, rAddr net.Addr, config *Config) (*Conn, error) {
 	ctx, cancel := config.connectContextMaker()
 	defer cancel()
 
-	return ServerWithContext(ctx, conn, config)
+	return ServerWithContext(ctx, conn, rAddr, config)
 }
 
-// DialWithContext connects to the given network address and establishes a DTLS connection on top.
-func DialWithContext(ctx context.Context, network string, raddr *net.UDPAddr, config *Config) (*Conn, error) {
-	pConn, err := net.DialUDP(network, nil, raddr)
+// DialWithContext connects to the given network address and establishes a DTLS
+// connection on top.
+func DialWithContext(ctx context.Context, network string, rAddr *net.UDPAddr, config *Config) (*Conn, error) {
+	// net.ListenUDP is used rather than net.DialUDP as the latter prevents the
+	// use of net.PacketConn.WriteTo.
+	// https://github.com/golang/go/blob/ce5e37ec21442c6eb13a43e68ca20129102ebac0/src/net/udpsock_posix.go#L115
+	pConn, err := net.ListenUDP(network, nil)
 	if err != nil {
 		return nil, err
 	}
-	return ClientWithContext(ctx, pConn, config)
+
+	return ClientWithContext(ctx, pConn, rAddr, config)
 }
 
 // ClientWithContext establishes a DTLS connection over an existing connection.
-func ClientWithContext(ctx context.Context, conn net.Conn, config *Config) (*Conn, error) {
+func ClientWithContext(ctx context.Context, conn net.PacketConn, rAddr net.Addr, config *Config) (*Conn, error) {
 	switch {
 	case config == nil:
 		return nil, errNoConfigProvided
@@ -247,19 +298,16 @@ func ClientWithContext(ctx context.Context, conn net.Conn, config *Config) (*Con
 		return nil, errPSKAndIdentityMustBeSetForClient
 	}
 
-	return createConn(ctx, conn, config, true, nil)
+	return createConn(ctx, conn, rAddr, config, true, nil)
 }
 
 // ServerWithContext listens for incoming DTLS connections.
-func ServerWithContext(ctx context.Context, conn net.Conn, config *Config) (*Conn, error) {
-	switch {
-	case config == nil:
+func ServerWithContext(ctx context.Context, conn net.PacketConn, rAddr net.Addr, config *Config) (*Conn, error) {
+	if config == nil {
 		return nil, errNoConfigProvided
-	case config.PSK == nil && len(config.Certificates) == 0:
-		return nil, errServerMustHaveCertificate
 	}
 
-	return createConn(ctx, conn, config, false, nil)
+	return createConn(ctx, conn, rAddr, config, false, nil)
 }
 
 // Read reads data from the connection.
@@ -314,15 +362,16 @@ func (c *Conn) Write(p []byte) (int, error) {
 
 	return len(p), c.writePackets(c.writeDeadline, []*packet{
 		{
-			record: &recordLayer{
-				recordLayerHeader: recordLayerHeader{
-					epoch:           c.getLocalEpoch(),
-					protocolVersion: protocolVersion1_2,
+			record: &recordlayer.RecordLayer{
+				Header: recordlayer.Header{
+					Epoch:   c.state.getLocalEpoch(),
+					Version: protocol.Version1_2,
 				},
-				content: &applicationData{
-					data: p,
+				Content: &protocol.ApplicationData{
+					Data: p,
 				},
 			},
+			shouldWrapCID: len(c.state.remoteConnectionID) > 0,
 			shouldEncrypt: true,
 		},
 	})
@@ -330,7 +379,7 @@ func (c *Conn) Write(p []byte) (int, error) {
 
 // Close closes the connection.
 func (c *Conn) Close() error {
-	err := c.close(true)
+	err := c.close(true) //nolint:contextcheck
 	c.handshakeLoopsFinished.Wait()
 	return err
 }
@@ -362,16 +411,17 @@ func (c *Conn) writePackets(ctx context.Context, pkts []*packet) error {
 	var rawPackets [][]byte
 
 	for _, p := range pkts {
-		if h, ok := p.record.content.(*handshake); ok {
+		if h, ok := p.record.Content.(*handshake.Handshake); ok {
 			handshakeRaw, err := p.record.Marshal()
 			if err != nil {
 				return err
 			}
 
 			c.log.Tracef("[handshake:%v] -> %s (epoch: %d, seq: %d)",
-				srvCliStr(c.state.isClient), h.handshakeHeader.handshakeType.String(),
-				p.record.recordLayerHeader.epoch, h.handshakeHeader.messageSequence)
-			c.handshakeCache.push(handshakeRaw[recordLayerHeaderSize:], p.record.recordLayerHeader.epoch, h.handshakeHeader.messageSequence, h.handshakeHeader.handshakeType, c.state.isClient)
+				srvCliStr(c.state.isClient), h.Header.Type.String(),
+				p.record.Header.Epoch, h.Header.MessageSequence)
+
+			c.handshakeCache.push(handshakeRaw[recordlayer.FixedHeaderSize:], p.record.Header.Epoch, h.Header.MessageSequence, h.Header.Type, c.state.isClient)
 
 			rawHandshakePackets, err := c.processHandshakePacket(p, h)
 			if err != nil {
@@ -392,7 +442,7 @@ func (c *Conn) writePackets(ctx context.Context, pkts []*packet) error {
 	compactedRawPackets := c.compactRawPackets(rawPackets)
 
 	for _, compactedRawPackets := range compactedRawPackets {
-		if _, err := c.nextConn.Write(ctx, compactedRawPackets); err != nil {
+		if _, err := c.nextConn.WriteToContext(ctx, compactedRawPackets, c.rAddr); err != nil {
 			return netError(err)
 		}
 	}
@@ -401,6 +451,11 @@ func (c *Conn) writePackets(ctx context.Context, pkts []*packet) error {
 }
 
 func (c *Conn) compactRawPackets(rawPackets [][]byte) [][]byte {
+	// avoid a useless copy in the common case
+	if len(rawPackets) == 1 {
+		return rawPackets
+	}
+
 	combinedRawPackets := make([][]byte, 0)
 	currentCombinedRawPacket := make([]byte, 0)
 
@@ -418,27 +473,62 @@ func (c *Conn) compactRawPackets(rawPackets [][]byte) [][]byte {
 }
 
 func (c *Conn) processPacket(p *packet) ([]byte, error) {
-	epoch := p.record.recordLayerHeader.epoch
+	epoch := p.record.Header.Epoch
 	for len(c.state.localSequenceNumber) <= int(epoch) {
 		c.state.localSequenceNumber = append(c.state.localSequenceNumber, uint64(0))
 	}
 	seq := atomic.AddUint64(&c.state.localSequenceNumber[epoch], 1) - 1
-	if seq > maxSequenceNumber {
+	if seq > recordlayer.MaxSequenceNumber {
 		// RFC 6347 Section 4.1.0
 		// The implementation must either abandon an association or rehandshake
 		// prior to allowing the sequence number to wrap.
 		return nil, errSequenceNumberOverflow
 	}
-	p.record.recordLayerHeader.sequenceNumber = seq
+	p.record.Header.SequenceNumber = seq
 
-	rawPacket, err := p.record.Marshal()
-	if err != nil {
-		return nil, err
+	var rawPacket []byte
+	if p.shouldWrapCID {
+		// Record must be marshaled to populate fields used in inner plaintext.
+		if _, err := p.record.Marshal(); err != nil {
+			return nil, err
+		}
+		content, err := p.record.Content.Marshal()
+		if err != nil {
+			return nil, err
+		}
+		inner := &recordlayer.InnerPlaintext{
+			Content:  content,
+			RealType: p.record.Header.ContentType,
+		}
+		rawInner, err := inner.Marshal() //nolint:govet
+		if err != nil {
+			return nil, err
+		}
+		cidHeader := &recordlayer.Header{
+			Version:        p.record.Header.Version,
+			ContentType:    protocol.ContentTypeConnectionID,
+			Epoch:          p.record.Header.Epoch,
+			ContentLen:     uint16(len(rawInner)),
+			ConnectionID:   c.state.remoteConnectionID,
+			SequenceNumber: p.record.Header.SequenceNumber,
+		}
+		rawPacket, err = cidHeader.Marshal()
+		if err != nil {
+			return nil, err
+		}
+		p.record.Header = *cidHeader
+		rawPacket = append(rawPacket, rawInner...)
+	} else {
+		var err error
+		rawPacket, err = p.record.Marshal()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if p.shouldEncrypt {
 		var err error
-		rawPacket, err = c.state.cipherSuite.encrypt(p.record, rawPacket)
+		rawPacket, err = c.state.cipherSuite.Encrypt(p.record, rawPacket)
 		if err != nil {
 			return nil, err
 		}
@@ -447,43 +537,70 @@ func (c *Conn) processPacket(p *packet) ([]byte, error) {
 	return rawPacket, nil
 }
 
-func (c *Conn) processHandshakePacket(p *packet, h *handshake) ([][]byte, error) {
+func (c *Conn) processHandshakePacket(p *packet, h *handshake.Handshake) ([][]byte, error) {
 	rawPackets := make([][]byte, 0)
 
 	handshakeFragments, err := c.fragmentHandshake(h)
 	if err != nil {
 		return nil, err
 	}
-	epoch := p.record.recordLayerHeader.epoch
+	epoch := p.record.Header.Epoch
 	for len(c.state.localSequenceNumber) <= int(epoch) {
 		c.state.localSequenceNumber = append(c.state.localSequenceNumber, uint64(0))
 	}
 
 	for _, handshakeFragment := range handshakeFragments {
 		seq := atomic.AddUint64(&c.state.localSequenceNumber[epoch], 1) - 1
-		if seq > maxSequenceNumber {
+		if seq > recordlayer.MaxSequenceNumber {
 			return nil, errSequenceNumberOverflow
 		}
 
-		recordLayerHeader := &recordLayerHeader{
-			protocolVersion: p.record.recordLayerHeader.protocolVersion,
-			contentType:     p.record.recordLayerHeader.contentType,
-			contentLen:      uint16(len(handshakeFragment)),
-			epoch:           p.record.recordLayerHeader.epoch,
-			sequenceNumber:  seq,
+		var rawPacket []byte
+		if p.shouldWrapCID {
+			inner := &recordlayer.InnerPlaintext{
+				Content:  handshakeFragment,
+				RealType: protocol.ContentTypeHandshake,
+				Zeros:    c.paddingLengthGenerator(uint(len(handshakeFragment))),
+			}
+			rawInner, err := inner.Marshal() //nolint:govet
+			if err != nil {
+				return nil, err
+			}
+			cidHeader := &recordlayer.Header{
+				Version:        p.record.Header.Version,
+				ContentType:    protocol.ContentTypeConnectionID,
+				Epoch:          p.record.Header.Epoch,
+				ContentLen:     uint16(len(rawInner)),
+				ConnectionID:   c.state.remoteConnectionID,
+				SequenceNumber: p.record.Header.SequenceNumber,
+			}
+			rawPacket, err = cidHeader.Marshal()
+			if err != nil {
+				return nil, err
+			}
+			p.record.Header = *cidHeader
+			rawPacket = append(rawPacket, rawInner...)
+		} else {
+			recordlayerHeader := &recordlayer.Header{
+				Version:        p.record.Header.Version,
+				ContentType:    p.record.Header.ContentType,
+				ContentLen:     uint16(len(handshakeFragment)),
+				Epoch:          p.record.Header.Epoch,
+				SequenceNumber: seq,
+			}
+
+			rawPacket, err = recordlayerHeader.Marshal()
+			if err != nil {
+				return nil, err
+			}
+
+			p.record.Header = *recordlayerHeader
+			rawPacket = append(rawPacket, handshakeFragment...)
 		}
 
-		recordLayerHeaderBytes, err := recordLayerHeader.Marshal()
-		if err != nil {
-			return nil, err
-		}
-
-		p.record.recordLayerHeader = *recordLayerHeader
-
-		rawPacket := append(recordLayerHeaderBytes, handshakeFragment...)
 		if p.shouldEncrypt {
 			var err error
-			rawPacket, err = c.state.cipherSuite.encrypt(p.record, rawPacket)
+			rawPacket, err = c.state.cipherSuite.Encrypt(p.record, rawPacket)
 			if err != nil {
 				return nil, err
 			}
@@ -495,8 +612,8 @@ func (c *Conn) processHandshakePacket(p *packet, h *handshake) ([][]byte, error)
 	return rawPackets, nil
 }
 
-func (c *Conn) fragmentHandshake(h *handshake) ([][]byte, error) {
-	content, err := h.handshakeMessage.Marshal()
+func (c *Conn) fragmentHandshake(h *handshake.Handshake) ([][]byte, error) {
+	content, err := h.Message.Marshal()
 	if err != nil {
 		return nil, err
 	}
@@ -514,29 +631,29 @@ func (c *Conn) fragmentHandshake(h *handshake) ([][]byte, error) {
 	for _, contentFragment := range contentFragments {
 		contentFragmentLen := len(contentFragment)
 
-		handshakeHeaderFragment := &handshakeHeader{
-			handshakeType:   h.handshakeHeader.handshakeType,
-			length:          h.handshakeHeader.length,
-			messageSequence: h.handshakeHeader.messageSequence,
-			fragmentOffset:  uint32(offset),
-			fragmentLength:  uint32(contentFragmentLen),
+		headerFragment := &handshake.Header{
+			Type:            h.Header.Type,
+			Length:          h.Header.Length,
+			MessageSequence: h.Header.MessageSequence,
+			FragmentOffset:  uint32(offset),
+			FragmentLength:  uint32(contentFragmentLen),
 		}
 
 		offset += contentFragmentLen
 
-		handshakeHeaderFragmentRaw, err := handshakeHeaderFragment.Marshal()
+		fragmentedHandshake, err := headerFragment.Marshal()
 		if err != nil {
 			return nil, err
 		}
 
-		fragmentedHandshake := append(handshakeHeaderFragmentRaw, contentFragment...)
+		fragmentedHandshake = append(fragmentedHandshake, contentFragment...)
 		fragmentedHandshakes = append(fragmentedHandshakes, fragmentedHandshake)
 	}
 
 	return fragmentedHandshakes, nil
 }
 
-var poolReadBuffer = sync.Pool{
+var poolReadBuffer = sync.Pool{ //nolint:gochecknoglobals
 	New: func() interface{} {
 		b := make([]byte, inboundBufferSize)
 		return &b
@@ -544,41 +661,43 @@ var poolReadBuffer = sync.Pool{
 }
 
 func (c *Conn) readAndBuffer(ctx context.Context) error {
-	bufptr := poolReadBuffer.Get().(*[]byte)
+	bufptr, ok := poolReadBuffer.Get().(*[]byte)
+	if !ok {
+		return errFailedToAccessPoolReadBuffer
+	}
 	defer poolReadBuffer.Put(bufptr)
 
 	b := *bufptr
-	i, err := c.nextConn.Read(ctx, b)
+	i, rAddr, err := c.nextConn.ReadFromContext(ctx, b)
 	if err != nil {
 		return netError(err)
 	}
 
-	pkts, err := unpackDatagram(b[:i])
+	pkts, err := recordlayer.ContentAwareUnpackDatagram(b[:i], len(c.state.localConnectionID))
 	if err != nil {
 		return err
 	}
 
 	var hasHandshake bool
 	for _, p := range pkts {
-		hs, alert, err := c.handleIncomingPacket(p, true)
+		hs, alert, err := c.handleIncomingPacket(ctx, p, rAddr, true)
 		if alert != nil {
-			if alertErr := c.notify(ctx, alert.alertLevel, alert.alertDescription); alertErr != nil {
+			if alertErr := c.notify(ctx, alert.Level, alert.Description); alertErr != nil {
 				if err == nil {
 					err = alertErr
 				}
 			}
 		}
+
+		var e *alertError
+		if errors.As(err, &e) && e.IsFatalOrCloseNotify() {
+			return e
+		}
+		if err != nil {
+			return err
+		}
 		if hs {
 			hasHandshake = true
-		}
-		switch e := err.(type) {
-		case nil:
-		case *errAlert:
-			if e.IsFatalOrCloseNotify() {
-				return e
-			}
-		default:
-			return e
 		}
 	}
 	if hasHandshake {
@@ -599,30 +718,32 @@ func (c *Conn) handleQueuedPackets(ctx context.Context) error {
 	c.encryptedPackets = nil
 
 	for _, p := range pkts {
-		_, alert, err := c.handleIncomingPacket(p, false) // don't re-enqueue
+		_, alert, err := c.handleIncomingPacket(ctx, p.data, p.rAddr, false) // don't re-enqueue
 		if alert != nil {
-			if alertErr := c.notify(ctx, alert.alertLevel, alert.alertDescription); alertErr != nil {
+			if alertErr := c.notify(ctx, alert.Level, alert.Description); alertErr != nil {
 				if err == nil {
 					err = alertErr
 				}
 			}
 		}
-		switch e := err.(type) {
-		case nil:
-		case *errAlert:
-			if e.IsFatalOrCloseNotify() {
-				return e
-			}
-		default:
+		var e *alertError
+		if errors.As(err, &e) && e.IsFatalOrCloseNotify() {
 			return e
+		}
+		if err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-func (c *Conn) handleIncomingPacket(buf []byte, enqueue bool) (bool, *alert, error) {
-	// TODO: avoid separate unmarshal
-	h := &recordLayerHeader{}
+func (c *Conn) handleIncomingPacket(ctx context.Context, buf []byte, rAddr net.Addr, enqueue bool) (bool, *alert.Alert, error) { //nolint:gocognit
+	h := &recordlayer.Header{}
+	// Set connection ID size so that records of content type tls12_cid will
+	// be parsed correctly.
+	if len(c.state.localConnectionID) > 0 {
+		h.ConnectionID = make([]byte, len(c.state.localConnectionID))
+	}
 	if err := h.Unmarshal(buf); err != nil {
 		// Decode error must be silently discarded
 		// [RFC6347 Section-4.1.2.7]
@@ -631,49 +752,93 @@ func (c *Conn) handleIncomingPacket(buf []byte, enqueue bool) (bool, *alert, err
 	}
 
 	// Validate epoch
-	remoteEpoch := c.getRemoteEpoch()
-	if h.epoch > remoteEpoch {
-		if h.epoch > remoteEpoch+1 {
+	remoteEpoch := c.state.getRemoteEpoch()
+	if h.Epoch > remoteEpoch {
+		if h.Epoch > remoteEpoch+1 {
 			c.log.Debugf("discarded future packet (epoch: %d, seq: %d)",
-				h.epoch, h.sequenceNumber,
+				h.Epoch, h.SequenceNumber,
 			)
 			return false, nil, nil
 		}
 		if enqueue {
 			c.log.Debug("received packet of next epoch, queuing packet")
-			c.encryptedPackets = append(c.encryptedPackets, buf)
+			c.encryptedPackets = append(c.encryptedPackets, addrPkt{rAddr, buf})
 		}
 		return false, nil, nil
 	}
 
 	// Anti-replay protection
-	for len(c.state.replayDetector) <= int(h.epoch) {
+	for len(c.state.replayDetector) <= int(h.Epoch) {
 		c.state.replayDetector = append(c.state.replayDetector,
-			replaydetector.New(c.replayProtectionWindow, maxSequenceNumber),
+			replaydetector.New(c.replayProtectionWindow, recordlayer.MaxSequenceNumber),
 		)
 	}
-	markPacketAsValid, ok := c.state.replayDetector[int(h.epoch)].Check(h.sequenceNumber)
+	markPacketAsValid, ok := c.state.replayDetector[int(h.Epoch)].Check(h.SequenceNumber)
 	if !ok {
 		c.log.Debugf("discarded duplicated packet (epoch: %d, seq: %d)",
-			h.epoch, h.sequenceNumber,
+			h.Epoch, h.SequenceNumber,
 		)
 		return false, nil, nil
 	}
 
+	// originalCID indicates whether the original record had content type
+	// Connection ID.
+	originalCID := false
+
 	// Decrypt
-	if h.epoch != 0 {
-		if c.state.cipherSuite == nil || !c.state.cipherSuite.isInitialized() {
+	if h.Epoch != 0 {
+		if c.state.cipherSuite == nil || !c.state.cipherSuite.IsInitialized() {
 			if enqueue {
-				c.encryptedPackets = append(c.encryptedPackets, buf)
+				c.encryptedPackets = append(c.encryptedPackets, addrPkt{rAddr, buf})
 				c.log.Debug("handshake not finished, queuing packet")
 			}
 			return false, nil, nil
 		}
 
+		// If a connection identifier had been negotiated and encryption is
+		// enabled, the connection identifier MUST be sent.
+		if len(c.state.localConnectionID) > 0 && h.ContentType != protocol.ContentTypeConnectionID {
+			c.log.Debug("discarded packet missing connection ID after value negotiated")
+			return false, nil, nil
+		}
+
 		var err error
-		buf, err = c.state.cipherSuite.decrypt(buf)
+		var hdr recordlayer.Header
+		if h.ContentType == protocol.ContentTypeConnectionID {
+			hdr.ConnectionID = make([]byte, len(c.state.localConnectionID))
+		}
+		buf, err = c.state.cipherSuite.Decrypt(hdr, buf)
 		if err != nil {
 			c.log.Debugf("%s: decrypt failed: %s", srvCliStr(c.state.isClient), err)
+			return false, nil, nil
+		}
+		// If this is a connection ID record, make it look like a normal record for
+		// further processing.
+		if h.ContentType == protocol.ContentTypeConnectionID {
+			originalCID = true
+			ip := &recordlayer.InnerPlaintext{}
+			if err := ip.Unmarshal(buf[h.Size():]); err != nil { //nolint:govet
+				c.log.Debugf("unpacking inner plaintext failed: %s", err)
+				return false, nil, nil
+			}
+			unpacked := &recordlayer.Header{
+				ContentType:    ip.RealType,
+				ContentLen:     uint16(len(ip.Content)),
+				Version:        h.Version,
+				Epoch:          h.Epoch,
+				SequenceNumber: h.SequenceNumber,
+			}
+			buf, err = unpacked.Marshal()
+			if err != nil {
+				c.log.Debugf("converting CID record to inner plaintext failed: %s", err)
+				return false, nil, nil
+			}
+			buf = append(buf, ip.Content...)
+		}
+
+		// If connection ID does not match discard the packet.
+		if !bytes.Equal(c.state.localConnectionID, h.ConnectionID) {
+			c.log.Debug("unexpected connection ID")
 			return false, nil, nil
 		}
 	}
@@ -687,64 +852,77 @@ func (c *Conn) handleIncomingPacket(buf []byte, enqueue bool) (bool, *alert, err
 	} else if isHandshake {
 		markPacketAsValid()
 		for out, epoch := c.fragmentBuffer.pop(); out != nil; out, epoch = c.fragmentBuffer.pop() {
-			rawHandshake := &handshake{}
-			if err := rawHandshake.Unmarshal(out); err != nil {
+			header := &handshake.Header{}
+			if err := header.Unmarshal(out); err != nil {
 				c.log.Debugf("%s: handshake parse failed: %s", srvCliStr(c.state.isClient), err)
 				continue
 			}
-
-			_ = c.handshakeCache.push(out, epoch, rawHandshake.handshakeHeader.messageSequence, rawHandshake.handshakeHeader.handshakeType, !c.state.isClient)
+			c.handshakeCache.push(out, epoch, header.MessageSequence, header.Type, !c.state.isClient)
 		}
 
 		return true, nil, nil
 	}
 
-	r := &recordLayer{}
+	r := &recordlayer.RecordLayer{}
 	if err := r.Unmarshal(buf); err != nil {
-		return false, &alert{alertLevelFatal, alertDecodeError}, err
+		return false, &alert.Alert{Level: alert.Fatal, Description: alert.DecodeError}, err
 	}
 
-	switch content := r.content.(type) {
-	case *alert:
+	isLatestSeqNum := false
+	switch content := r.Content.(type) {
+	case *alert.Alert:
 		c.log.Tracef("%s: <- %s", srvCliStr(c.state.isClient), content.String())
-		var a *alert
-		if content.alertDescription == alertCloseNotify {
+		var a *alert.Alert
+		if content.Description == alert.CloseNotify {
 			// Respond with a close_notify [RFC5246 Section 7.2.1]
-			a = &alert{alertLevelWarning, alertCloseNotify}
+			a = &alert.Alert{Level: alert.Warning, Description: alert.CloseNotify}
 		}
-		markPacketAsValid()
-		return false, a, &errAlert{content}
-	case *changeCipherSpec:
-		if c.state.cipherSuite == nil || !c.state.cipherSuite.isInitialized() {
+		_ = markPacketAsValid()
+		return false, a, &alertError{content}
+	case *protocol.ChangeCipherSpec:
+		if c.state.cipherSuite == nil || !c.state.cipherSuite.IsInitialized() {
 			if enqueue {
-				c.encryptedPackets = append(c.encryptedPackets, buf)
+				c.encryptedPackets = append(c.encryptedPackets, addrPkt{rAddr, buf})
 				c.log.Debugf("CipherSuite not initialized, queuing packet")
 			}
 			return false, nil, nil
 		}
 
-		newRemoteEpoch := h.epoch + 1
+		newRemoteEpoch := h.Epoch + 1
 		c.log.Tracef("%s: <- ChangeCipherSpec (epoch: %d)", srvCliStr(c.state.isClient), newRemoteEpoch)
 
-		if c.getRemoteEpoch()+1 == newRemoteEpoch {
+		if c.state.getRemoteEpoch()+1 == newRemoteEpoch {
 			c.setRemoteEpoch(newRemoteEpoch)
-			markPacketAsValid()
+			isLatestSeqNum = markPacketAsValid()
 		}
-	case *applicationData:
-		if h.epoch == 0 {
-			return false, &alert{alertLevelFatal, alertUnexpectedMessage}, fmt.Errorf("ApplicationData with epoch of 0")
+	case *protocol.ApplicationData:
+		if h.Epoch == 0 {
+			return false, &alert.Alert{Level: alert.Fatal, Description: alert.UnexpectedMessage}, errApplicationDataEpochZero
 		}
 
-		markPacketAsValid()
+		isLatestSeqNum = markPacketAsValid()
 
 		select {
-		case c.decrypted <- content.data:
+		case c.decrypted <- content.Data:
 		case <-c.closed.Done():
+		case <-ctx.Done():
 		}
 
 	default:
-		return false, &alert{alertLevelFatal, alertUnexpectedMessage}, fmt.Errorf("unhandled contentType %d", content.contentType())
+		return false, &alert.Alert{Level: alert.Fatal, Description: alert.UnexpectedMessage}, fmt.Errorf("%w: %d", errUnhandledContextType, content.ContentType())
 	}
+
+	// Any valid connection ID record is a candidate for updating the remote
+	// address if it is the latest record received.
+	// https://datatracker.ietf.org/doc/html/rfc9146#peer-address-update
+	if originalCID && isLatestSeqNum {
+		if rAddr != c.RemoteAddr() {
+			c.lock.Lock()
+			c.rAddr = rAddr
+			c.lock.Unlock()
+		}
+	}
+
 	return false, nil, nil
 }
 
@@ -752,19 +930,30 @@ func (c *Conn) recvHandshake() <-chan chan struct{} {
 	return c.handshakeRecv
 }
 
-func (c *Conn) notify(ctx context.Context, level alertLevel, desc alertDescription) error {
+func (c *Conn) notify(ctx context.Context, level alert.Level, desc alert.Description) error {
+	if level == alert.Fatal && len(c.state.SessionID) > 0 {
+		// According to the RFC, we need to delete the stored session.
+		// https://datatracker.ietf.org/doc/html/rfc5246#section-7.2
+		if ss := c.fsm.cfg.sessionStore; ss != nil {
+			c.log.Tracef("clean invalid session: %s", c.state.SessionID)
+			if err := ss.Del(c.sessionKey()); err != nil {
+				return err
+			}
+		}
+	}
 	return c.writePackets(ctx, []*packet{
 		{
-			record: &recordLayer{
-				recordLayerHeader: recordLayerHeader{
-					epoch:           c.getLocalEpoch(),
-					protocolVersion: protocolVersion1_2,
+			record: &recordlayer.RecordLayer{
+				Header: recordlayer.Header{
+					Epoch:   c.state.getLocalEpoch(),
+					Version: protocol.Version1_2,
 				},
-				content: &alert{
-					alertLevel:       level,
-					alertDescription: desc,
+				Content: &alert.Alert{
+					Level:       level,
+					Description: desc,
 				},
 			},
+			shouldWrapCID: len(c.state.remoteConnectionID) > 0,
 			shouldEncrypt: c.isHandshakeCompletedSuccessfully(),
 		},
 	})
@@ -779,7 +968,7 @@ func (c *Conn) isHandshakeCompletedSuccessfully() bool {
 	return boolean.bool
 }
 
-func (c *Conn) handshake(ctx context.Context, cfg *handshakeConfig, initialFlight flightVal, initialState handshakeState) error {
+func (c *Conn) handshake(ctx context.Context, cfg *handshakeConfig, initialFlight flightVal, initialState handshakeState) error { //nolint:gocognit
 	c.fsm = newHandshakeFSM(&c.state, c.handshakeCache, cfg, initialFlight)
 
 	done := make(chan struct{})
@@ -804,7 +993,7 @@ func (c *Conn) handshake(ctx context.Context, cfg *handshakeConfig, initialFligh
 	go func() {
 		defer c.handshakeLoopsFinished.Done()
 		err := c.fsm.Run(ctxHs, c, initialState)
-		if err != context.Canceled {
+		if !errors.Is(err, context.Canceled) {
 			select {
 			case firstErr <- err:
 			default:
@@ -823,41 +1012,48 @@ func (c *Conn) handshake(ctx context.Context, cfg *handshakeConfig, initialFligh
 		defer c.handshakeLoopsFinished.Done()
 		for {
 			if err := c.readAndBuffer(ctxRead); err != nil {
-				switch e := err.(type) {
-				case *errAlert:
+				var e *alertError
+				if errors.As(err, &e) {
 					if !e.IsFatalOrCloseNotify() {
 						if c.isHandshakeCompletedSuccessfully() {
 							// Pass the error to Read()
 							select {
 							case c.decrypted <- err:
 							case <-c.closed.Done():
+							case <-ctxRead.Done():
 							}
 						}
 						continue // non-fatal alert must not stop read loop
 					}
-				case error:
-					switch err {
-					case context.DeadlineExceeded, context.Canceled, io.EOF:
+				} else {
+					switch {
+					case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled), errors.Is(err, io.EOF), errors.Is(err, net.ErrClosed):
 					default:
 						if c.isHandshakeCompletedSuccessfully() {
 							// Keep read loop and pass the read error to Read()
 							select {
 							case c.decrypted <- err:
 							case <-c.closed.Done():
+							case <-ctxRead.Done():
 							}
 							continue // non-fatal alert must not stop read loop
 						}
 					}
 				}
+
 				select {
 				case firstErr <- err:
 				default:
 				}
 
-				if e, ok := err.(*errAlert); ok {
+				if e != nil {
 					if e.IsFatalOrCloseNotify() {
-						_ = c.close(false)
+						_ = c.close(false) //nolint:contextcheck
 					}
+				}
+				if !c.isConnectionClosed() && errors.Is(err, context.Canceled) {
+					c.log.Trace("handshake timeouts - closing underline connection")
+					_ = c.close(false) //nolint:contextcheck
 				}
 				return
 			}
@@ -868,10 +1064,12 @@ func (c *Conn) handshake(ctx context.Context, cfg *handshakeConfig, initialFligh
 	case err := <-firstErr:
 		cancelRead()
 		cancel()
+		c.handshakeLoopsFinished.Wait()
 		return c.translateHandshakeCtxError(err)
 	case <-ctx.Done():
 		cancelRead()
 		cancel()
+		c.handshakeLoopsFinished.Wait()
 		return c.translateHandshakeCtxError(ctx.Err())
 	case <-done:
 		return nil
@@ -879,16 +1077,13 @@ func (c *Conn) handshake(ctx context.Context, cfg *handshakeConfig, initialFligh
 }
 
 func (c *Conn) translateHandshakeCtxError(err error) error {
-	switch err {
-	case context.Canceled:
-		if c.isHandshakeCompletedSuccessfully() {
-			return nil
-		}
-		return err
-	case context.DeadlineExceeded:
-		return errHandshakeTimeout
+	if err == nil {
+		return nil
 	}
-	return err
+	if errors.Is(err, context.Canceled) && c.isHandshakeCompletedSuccessfully() {
+		return nil
+	}
+	return &HandshakeError{Err: err}
 }
 
 func (c *Conn) close(byUser bool) error {
@@ -898,7 +1093,7 @@ func (c *Conn) close(byUser bool) error {
 	if c.isHandshakeCompletedSuccessfully() && byUser {
 		// Discard error from notify() to return non-error on the first user call of Close()
 		// even if the underlying connection is already closed.
-		_ = c.notify(context.Background(), alertLevelWarning, alertCloseNotify)
+		_ = c.notify(context.Background(), alert.Warning, alert.CloseNotify)
 	}
 
 	c.closeLock.Lock()
@@ -907,11 +1102,16 @@ func (c *Conn) close(byUser bool) error {
 	if byUser {
 		c.connectionClosedByUser = true
 	}
+	isClosed := c.isConnectionClosed()
 	c.closed.Close()
 	c.closeLock.Unlock()
 
 	if closedByUser {
 		return ErrConnClosed
+	}
+
+	if isClosed {
+		return nil
 	}
 
 	return c.nextConn.Close()
@@ -930,16 +1130,8 @@ func (c *Conn) setLocalEpoch(epoch uint16) {
 	c.state.localEpoch.Store(epoch)
 }
 
-func (c *Conn) getLocalEpoch() uint16 {
-	return c.state.localEpoch.Load().(uint16)
-}
-
 func (c *Conn) setRemoteEpoch(epoch uint16) {
 	c.state.remoteEpoch.Store(epoch)
-}
-
-func (c *Conn) getRemoteEpoch() uint16 {
-	return c.state.remoteEpoch.Load().(uint16)
 }
 
 // LocalAddr implements net.Conn.LocalAddr
@@ -949,7 +1141,19 @@ func (c *Conn) LocalAddr() net.Addr {
 
 // RemoteAddr implements net.Conn.RemoteAddr
 func (c *Conn) RemoteAddr() net.Addr {
-	return c.nextConn.RemoteAddr()
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+	return c.rAddr
+}
+
+func (c *Conn) sessionKey() []byte {
+	if c.state.isClient {
+		// As ServerName can be like 0.example.com, it's better to add
+		// delimiter character which is not allowed to be in
+		// neither address or domain name.
+		return []byte(c.rAddr.String() + "_" + c.fsm.cfg.serverName)
+	}
+	return c.state.SessionID
 }
 
 // SetDeadline implements net.Conn.SetDeadline

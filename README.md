@@ -16,10 +16,16 @@ When running, please provide following format:
 | d    | data to be sent in POST or PUT                 | ""               |
 | cf   | content format                                 | 50 (JSON format) |
 
+The cli offers DTLS support with PKI certificates.Export the path to the certificate folder with the name `CERT_PATH` before build to enable the DTLS configuration.
+
+```bash
+export CERT_PATH="../certs"
+make 
+```
 ## Examples:
 
 ```bash
-coap-cli get channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -o
+coap-cli get channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -o -tls
 ```
 ```bash
 coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world"

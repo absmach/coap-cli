@@ -12,10 +12,11 @@ import (
 	"syscall"
 
 	coap "github.com/mainflux/coap-cli/coap"
-	"github.com/plgd-dev/go-coap/v2/message"
-	coapmsg "github.com/plgd-dev/go-coap/v2/message"
-	"github.com/plgd-dev/go-coap/v2/message/codes"
-	"github.com/plgd-dev/go-coap/v2/udp/message/pool"
+
+	"github.com/plgd-dev/go-coap/v3/message"
+	coapmsg "github.com/plgd-dev/go-coap/v3/message"
+	"github.com/plgd-dev/go-coap/v3/message/codes"
+	"github.com/plgd-dev/go-coap/v3/message/pool"
 )
 
 const (
@@ -36,7 +37,6 @@ mathod: get, put, post or delete
 -p      port                                           (default: "5683")
 -d      data to be sent in POST or PUT                 (default: "")
 -cf     content format                                 (default: 50 - JSON format))
-
 Examples:
 coap-cli get channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -o
 coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world"
@@ -55,7 +55,7 @@ func parseCode(code string) (codes.Code, error) {
 	case delete:
 		return codes.DELETE, nil
 	}
-	return 0, errors.New("Message can be GET, POST, PUT or DELETE")
+	return 0, errors.New("MESSAGE CAN BE GET, POST, PUT OR DELETE")
 }
 
 func printMsg(m *pool.Message) {
@@ -65,12 +65,14 @@ func printMsg(m *pool.Message) {
 }
 
 func main() {
+	certPath := os.Getenv("CERT_PATH")
+
 	if len(os.Args) < 2 {
 		log.Fatal(helpCmd)
 	}
 	help := strings.ToLower(os.Args[1])
 	if help == "-h" || help == "--help" {
-		log.Println(helpMsg)
+		log.Print(helpMsg)
 		os.Exit(0)
 	}
 
@@ -97,7 +99,7 @@ func main() {
 	a := flag.String("auth", "", "Auth token")
 	flag.Parse()
 
-	client, err := coap.New(*h + ":" + *p)
+	client, err := coap.New(*h+":"+*p,certPath)
 	if err != nil {
 		log.Fatal("Error creating client: ", err)
 	}
@@ -123,9 +125,10 @@ func main() {
 	if err != nil {
 		log.Fatal("Error observing resource: ", err)
 	}
-	errs := make(chan error, 2)
+	errs := make(chan error, 1)
+
 	go func() {
-		c := make(chan os.Signal)
+		c := make(chan os.Signal, 1)
 		signal.Notify(c, syscall.SIGINT)
 		errs <- fmt.Errorf("%s", <-c)
 	}()

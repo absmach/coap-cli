@@ -8,26 +8,48 @@ import (
 	"log"
 	"time"
 
-	"github.com/plgd-dev/go-coap/v2/message"
-	"github.com/plgd-dev/go-coap/v2/message/codes"
-	"github.com/plgd-dev/go-coap/v2/udp"
-	"github.com/plgd-dev/go-coap/v2/udp/client"
-	"github.com/plgd-dev/go-coap/v2/udp/message/pool"
+	certutil "github.com/mainflux/coap-cli/certutil"
+
+	"github.com/plgd-dev/go-coap/v3/dtls"
+	"github.com/plgd-dev/go-coap/v3/message"
+	"github.com/plgd-dev/go-coap/v3/message/codes"
+	"github.com/plgd-dev/go-coap/v3/message/pool"
+	"github.com/plgd-dev/go-coap/v3/udp"
+	"github.com/plgd-dev/go-coap/v3/udp/client"
 )
 
 // Client represents CoAP client.
 type Client struct {
-	conn *client.ClientConn
+	conn *client.Conn
+}
+
+// Observation interface
+type NewObservation interface {
+	Cancel(ctx context.Context, opts ...message.Option) error
+	Canceled() bool
 }
 
 // New returns new CoAP client connecting it to the server.
-func New(addr string) (Client, error) {
-	c, err := udp.Dial(addr)
-	if err != nil {
-		log.Fatalf("Error dialing: %v", err)
-	}
+func New(addr string, certPath string) (Client, error) {
+	switch {
+	case certPath != "":
+		config, err := certutil.CreateClientConfig(context.Background(), certPath)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		co, err := dtls.Dial(addr, config)
+		if err != nil {
+			log.Fatalf("Error dialing: %v", err)
+		}
+		return Client{conn: co}, err
+	default:
+		c, err := udp.Dial(addr)
+		if err != nil {
+			log.Fatalf("Error dialing: %v", err)
+		}
+		return Client{conn: c}, nil
 
-	return Client{conn: c}, nil
+	}
 }
 
 // Send send a message.
@@ -45,11 +67,11 @@ func (c Client) Send(path string, msgCode codes.Code, cf message.MediaType, payl
 	case codes.DELETE:
 		return c.conn.Delete(ctx, path, opts...)
 	}
-	return nil, errors.New("Invalid message code")
+	return nil, errors.New("INVALID MESSAGE CODE")
 }
 
 // Receive receives a message.
-func (c Client) Receive(path string, opts ...message.Option) (*client.Observation, error) {
+func (c Client) Receive(path string, opts ...message.Option) (NewObservation, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
@@ -64,4 +86,5 @@ func (c Client) Receive(path string, opts ...message.Option) (*client.Observatio
 			fmt.Println("Payload: ", string(body))
 		}
 	}, opts...)
+
 }
