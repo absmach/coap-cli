@@ -5,8 +5,6 @@ package main
 
 import (
 	"context"
-	"errors"
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -81,8 +79,9 @@ func printMsg(m *pool.Message) {
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		log.Fatal(helpCmd)
+	config, err := cli.LoadConfig()
+	if err != nil {
+		log.Fatalf("Error loading config: %v", err)
 	}
 	help := strings.ToLower(os.Args[1])
 	if help == "-h" || help == "--help" {
