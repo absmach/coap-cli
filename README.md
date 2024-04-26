@@ -17,8 +17,6 @@ When running, please provide following format:
 | d    | data to be sent in POST or PUT               | ""               |
 | cf   | content format                               | 50 (JSON format) |
 
-The default values are as set in the [.env](.env) file. Modify them as required.
-
 ## Examples:
 
 ```bash
