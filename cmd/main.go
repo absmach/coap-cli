@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	coap "github.com/mainflux/coap-cli/coap"
+	coap "github.com/absmach/coap-cli/coap"
 	"github.com/plgd-dev/go-coap/v2/message"
 	coapmsg "github.com/plgd-dev/go-coap/v2/message"
 	"github.com/plgd-dev/go-coap/v2/message/codes"
