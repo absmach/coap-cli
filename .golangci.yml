@@ -7,6 +7,8 @@ run:
   issues-exit-code: 1
 
 linters-settings:
+  exhaustive:
+    default-signifies-exhaustive: true
   importas:
     no-unaliased: true
     no-extra-aliases: false

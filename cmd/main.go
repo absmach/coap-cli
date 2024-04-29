@@ -1,3 +1,6 @@
+// Copyright (c) Abstract Machines
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -19,10 +22,10 @@ import (
 )
 
 const (
-	get    = "GET"
-	put    = "PUT"
-	post   = "POST"
-	delete = "DELETE"
+	getCode    = "GET"
+	putCode    = "PUT"
+	postCode   = "POST"
+	deleteCode = "DELETE"
 )
 
 const (
@@ -44,18 +47,41 @@ coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -a
 `
 )
 
+var (
+	errUnsupportedCode = errors.New("Message can be GET, POST, PUT or DELETE")
+	errCreateClient    = errors.New("Error creating client")
+	errSendMsg         = errors.New("Error sending message")
+	errInvalidObsOpt   = errors.New("Invalid observe option")
+	errFailedObs       = errors.New("Failed to observe resource")
+	ErrReceivedSignal  = errors.New("received signal")
+	ErrFailedObsCancel = errors.New("failed to cancel observation")
+	ErrObsTerminated   = errors.New("observation terminated")
+)
+
+type Request struct {
+	code codes.Code
+	path string
+	host *string
+	port *string
+	cf   *int
+	data *string
+	auth *string
+	obs  *bool
+}
+
 func parseCode(code string) (codes.Code, error) {
 	switch code {
-	case get:
+	case getCode:
 		return codes.GET, nil
-	case put:
+	case putCode:
 		return codes.PUT, nil
-	case post:
+	case postCode:
 		return codes.POST, nil
-	case delete:
+	case deleteCode:
 		return codes.DELETE, nil
 	}
-	return 0, errors.New("Message can be GET, POST, PUT or DELETE")
+
+	return 0, errUnsupportedCode
 }
 
 func printMsg(m *pool.Message) {
@@ -70,11 +96,12 @@ func main() {
 	}
 	help := strings.ToLower(os.Args[1])
 	if help == "-h" || help == "--help" {
-		log.Println(helpMsg)
+		log.Print(helpMsg)
 		os.Exit(0)
 	}
-
-	code, err := parseCode(strings.ToUpper(os.Args[1]))
+	req := Request{}
+	var err error
+	req.code, err = parseCode(strings.ToUpper(os.Args[1]))
 	if err != nil {
 		log.Fatalf("Can't read request code: %s\n%s", err, helpCmd)
 	}
@@ -82,55 +109,71 @@ func main() {
 	if len(os.Args) < 3 {
 		log.Fatalf("CoAP URL must not be empty.\n%s", helpCmd)
 	}
-	path := os.Args[2]
-	if strings.HasPrefix(path, "-") {
+	req.path = os.Args[2]
+	if strings.HasPrefix(req.path, "-") {
 		log.Fatalf("Please enter a valid CoAP URL.\n%s", helpCmd)
 	}
 
 	os.Args = os.Args[2:]
-	o := flag.Bool("o", false, "Observe")
-	h := flag.String("h", "localhost", "Host")
-	p := flag.String("p", "5683", "Port")
+	req.obs = flag.Bool("o", false, "Observe")
+	req.host = flag.String("h", "localhost", "Host")
+	req.port = flag.String("p", "5683", "Port")
 	// Default type is JSON.
-	cf := flag.Int("cf", 50, "Content format")
-	d := flag.String("d", "", "Message data")
-	a := flag.String("auth", "", "Auth token")
+	req.cf = flag.Int("cf", 50, "Content format")
+	req.data = flag.String("d", "", "Message data")
+	req.auth = flag.String("auth", "", "Auth token")
 	flag.Parse()
 
-	client, err := coap.New(*h + ":" + *p)
+	if err = makeRequest(req); err != nil {
+		log.Fatal("Error making request: ", err)
+	}
+}
+
+func makeRequest(req Request) error {
+	client, err := coap.New(*req.host + ":" + *req.port)
 	if err != nil {
-		log.Fatal("Error creating client: ", err)
+		return errors.Join(errCreateClient, err)
 	}
 	var opts coapmsg.Options
-	if a != nil {
-		opts = append(opts, coapmsg.Option{ID: coapmsg.URIQuery, Value: []byte(fmt.Sprintf("auth=%s", *a))})
+	if req.auth != nil {
+		opts = append(opts, coapmsg.Option{ID: coapmsg.URIQuery, Value: []byte(fmt.Sprintf("auth=%s", *req.auth))})
 	}
 
-	if o == nil || (!*o) {
-		pld := strings.NewReader(*d)
+	if req.obs == nil || (!*req.obs) {
+		pld := strings.NewReader(*req.data)
 
-		res, err := client.Send(path, code, message.MediaType(*cf), pld, opts...)
+		res, err := client.Send(req.path, req.code, message.MediaType(*req.cf), pld, opts...)
 		if err != nil {
-			log.Fatal("Error sending message: ", err)
+			return errors.Join(errSendMsg, err)
 		}
 		printMsg(res)
-		return
+
+		return nil
 	}
-	if code != codes.GET {
-		log.Fatal("Only GET requests accept observe option.")
+	if req.code != codes.GET {
+		return errInvalidObsOpt
 	}
-	obs, err := client.Receive(path, opts...)
+	obs, err := client.Receive(req.path, opts...)
 	if err != nil {
-		log.Fatal("Error observing resource: ", err)
+		return errors.Join(errFailedObs, err)
 	}
-	errs := make(chan error, 2)
+
+	errs := make(chan error, 1)
 	go func() {
-		c := make(chan os.Signal)
-		signal.Notify(c, syscall.SIGINT)
-		errs <- fmt.Errorf("%s", <-c)
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT)
+
+		sig := <-sigChan
+		errs <- fmt.Errorf("%w: %v", ErrReceivedSignal, sig)
 	}()
 
 	err = <-errs
-	obs.Cancel(context.Background())
-	log.Fatal("Observation terminated: ", err)
+	if err != nil {
+		return errors.Join(ErrObsTerminated, err)
+	}
+	if err := obs.Cancel(context.Background()); err != nil {
+		return errors.Join(ErrFailedObsCancel, err)
+	}
+
+	return nil
 }
