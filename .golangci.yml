@@ -6,6 +6,37 @@ run:
   timeout: 1m
   issues-exit-code: 1
 
+linters-settings:
+  importas:
+    no-unaliased: true
+    no-extra-aliases: false
+  gocritic:
+    enabled-checks:
+      - captLocal
+      - singleCaseSwitch
+      - switchTrue
+      - importShadow
+      - httpNoBody
+      - paramTypeCombine
+      - emptyStringTest
+      - builtinShadow
+      - exposedSyncMutex
+    disabled-checks:
+      - appendAssign
+    enabled-tags:
+      - diagnostic
+    disabled-tags:
+      - performance
+      - style
+      - experimental
+      - opinionated
+  stylecheck:
+    checks: ["-ST1000", "-ST1003", "-ST1020", "-ST1021", "-ST1022"]
+  goheader:
+    template: |-
+      Copyright (c) Abstract Machines
+      SPDX-License-Identifier: Apache-2.0
+
 linters:
   disable-all: true
   fast: true
