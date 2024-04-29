@@ -33,4 +33,4 @@ jobs:
 
       - name: Build Binaries
         run: |
-          make all
+          make all -j $(nproc)

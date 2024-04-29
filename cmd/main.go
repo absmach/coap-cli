@@ -22,10 +22,10 @@ import (
 )
 
 const (
-	getCode    = "GET"
-	putCode    = "PUT"
-	postCode   = "POST"
-	deleteCode = "DELETE"
+	codeGet    = "GET"
+	codePut    = "PUT"
+	codePost   = "POST"
+	codeDelete = "DELETE"
 )
 
 const (
@@ -53,9 +53,9 @@ var (
 	errSendMsg         = errors.New("Error sending message")
 	errInvalidObsOpt   = errors.New("Invalid observe option")
 	errFailedObs       = errors.New("Failed to observe resource")
-	ErrReceivedSignal  = errors.New("received signal")
-	ErrFailedObsCancel = errors.New("failed to cancel observation")
-	ErrObsTerminated   = errors.New("observation terminated")
+	errReceivedSignal  = errors.New("received signal")
+	errFailedObsCancel = errors.New("failed to cancel observation")
+	errObsTerminated   = errors.New("observation terminated")
 )
 
 type Request struct {
@@ -71,13 +71,13 @@ type Request struct {
 
 func parseCode(code string) (codes.Code, error) {
 	switch code {
-	case getCode:
+	case codeGet:
 		return codes.GET, nil
-	case putCode:
+	case codePut:
 		return codes.PUT, nil
-	case postCode:
+	case codePost:
 		return codes.POST, nil
-	case deleteCode:
+	case codeDelete:
 		return codes.DELETE, nil
 	}
 
@@ -164,15 +164,15 @@ func makeRequest(req Request) error {
 		signal.Notify(sigChan, syscall.SIGINT)
 
 		sig := <-sigChan
-		errs <- fmt.Errorf("%w: %v", ErrReceivedSignal, sig)
+		errs <- fmt.Errorf("%w: %v", errReceivedSignal, sig)
 	}()
 
 	err = <-errs
 	if err != nil {
-		return errors.Join(ErrObsTerminated, err)
+		return errors.Join(errObsTerminated, err)
 	}
 	if err := obs.Cancel(context.Background()); err != nil {
-		return errors.Join(ErrFailedObsCancel, err)
+		return errors.Join(errFailedObsCancel, err)
 	}
 
 	return nil
