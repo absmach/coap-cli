@@ -47,18 +47,7 @@ coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -a
 `
 )
 
-var (
-	errUnsupportedCode = errors.New("Message can be GET, POST, PUT or DELETE")
-	errCreateClient    = errors.New("Error creating client")
-	errSendMsg         = errors.New("Error sending message")
-	errInvalidObsOpt   = errors.New("Invalid observe option")
-	errFailedObs       = errors.New("Failed to observe resource")
-	errReceivedSignal  = errors.New("received signal")
-	errFailedObsCancel = errors.New("failed to cancel observation")
-	errObsTerminated   = errors.New("observation terminated")
-)
-
-type Request struct {
+type request struct {
 	code codes.Code
 	path string
 	host *string
@@ -81,7 +70,7 @@ func parseCode(code string) (codes.Code, error) {
 		return codes.DELETE, nil
 	}
 
-	return 0, errUnsupportedCode
+	return 0, errors.New("Message can be GET, POST, PUT or DELETE")
 }
 
 func printMsg(m *pool.Message) {
@@ -99,7 +88,7 @@ func main() {
 		log.Print(helpMsg)
 		os.Exit(0)
 	}
-	req := Request{}
+	req := request{}
 	var err error
 	req.code, err = parseCode(strings.ToUpper(os.Args[1]))
 	if err != nil {
@@ -125,14 +114,14 @@ func main() {
 	flag.Parse()
 
 	if err = makeRequest(req); err != nil {
-		log.Fatal("Error making request: ", err)
+		log.Fatal(err)
 	}
 }
 
-func makeRequest(req Request) error {
+func makeRequest(req request) error {
 	client, err := coap.New(*req.host + ":" + *req.port)
 	if err != nil {
-		return errors.Join(errCreateClient, err)
+		return errors.Join(errors.New("Error creating client"), err)
 	}
 	var opts coapmsg.Options
 	if req.auth != nil {
@@ -144,18 +133,17 @@ func makeRequest(req Request) error {
 
 		res, err := client.Send(req.path, req.code, message.MediaType(*req.cf), pld, opts...)
 		if err != nil {
-			return errors.Join(errSendMsg, err)
+			return errors.Join(errors.New("Error sending message"), err)
 		}
 		printMsg(res)
-
 		return nil
 	}
 	if req.code != codes.GET {
-		return errInvalidObsOpt
+		return errors.New("Invalid observe option")
 	}
 	obs, err := client.Receive(req.path, opts...)
 	if err != nil {
-		return errors.Join(errFailedObs, err)
+		return errors.Join(errors.New("Failed to observe resource"), err)
 	}
 
 	errs := make(chan error, 1)
@@ -164,16 +152,15 @@ func makeRequest(req Request) error {
 		signal.Notify(sigChan, syscall.SIGINT)
 
 		sig := <-sigChan
-		errs <- fmt.Errorf("%w: %v", errReceivedSignal, sig)
+		errs <- fmt.Errorf("%v", sig)
 	}()
 
 	err = <-errs
 	if err != nil {
-		return errors.Join(errObsTerminated, err)
+		return errors.Join(errors.New("observation terminated"), err)
 	}
 	if err := obs.Cancel(context.Background()); err != nil {
-		return errors.Join(errFailedObsCancel, err)
+		return errors.Join(errors.New("failed to cancel observation"), err)
 	}
-
 	return nil
 }
