@@ -16,6 +16,7 @@ import (
 	"github.com/plgd-dev/go-coap/v3/message/pool"
 	"github.com/plgd-dev/go-coap/v3/udp"
 	"github.com/plgd-dev/go-coap/v3/udp/client"
+	"github.com/plgd-dev/go-coap/v3/mux"
 )
 
 var errInvalidMsgCode = errors.New("message can be GET, POST, PUT or DELETE")
@@ -23,11 +24,6 @@ var errInvalidMsgCode = errors.New("message can be GET, POST, PUT or DELETE")
 // Client represents CoAP client.
 type Client struct {
 	conn *client.Conn
-}
-
-type Observation interface {
-	Cancel(ctx context.Context, opts ...message.Option) error
-	Canceled() bool
 }
 
 // New returns new CoAP client connecting it to the server.
@@ -60,7 +56,7 @@ func (c Client) Send(path string, msgCode codes.Code, cf message.MediaType, payl
 }
 
 // Receive receives a message.
-func (c Client) Receive(path string, opts ...message.Option) (Observation, error) {
+func (c Client) Receive(path string, opts ...message.Option) (mux.Observation, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
