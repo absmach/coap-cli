@@ -4,26 +4,31 @@ Simple CoAP cli client written in Go.
 
 ## Usage
 
-coap-cli [`command`]
+```bash
+Usage:
+  coap-cli [command]
 
-#### Available Commands:
+Available Commands:
+  completion  Generate the autocompletion script for the specified shell
+  delete      Perform a DELETE request on a COAP resource
+  get         Perform a GET request on a COAP resource
+  help        Help about any command
+  post        Perform a POST request on a COAP resource
+  put         Perform a PUT request on a COAP resource
 
-- `completion` Generate the autocompletion script for the specified shell
-- `delete` Perform a DELETE request on a COAP resource
-- `get` Perform a GET request on a COAP resource
-- `help` Help about any command
-- `post` Perform a POST request on a COAP resource
-- `put` Perform a PUT request on a COAP resource
+Flags:
+  -a, --auth string           Auth
+  -c, --content-format int    Content format (default 50)
+  -h, --help                  help for coap-cli
+  -H, --host string           Host (default "localhost")
+  -0, --options stringArray   Options
+  -p, --port string           Port (default "5683")
+  -d, --data string           Data(default "") - only available for put, post and delete commands
+  -o, --observe bool          Observe - only available for get command
 
-#### Flags:
-
-- `-a`, `--auth` string Auth (default "")
-- `-c`, `--content-format` int Content format (default 50)
-- `-h`, `--help` help for coap-cli
-- `-H`, `--host` string Host (default "localhost")
-- `-p`, `--port` string Port (default "5683")
-
-Use "coap-cli [command] --help" for more information about a command.
+Use "coap-cli [command] --help" for more information about a command
+```
+The options flag accepts a comma separated string comprising of the optionID defined by [RFC-7252](https://datatracker.ietf.org/doc/html/rfc7252) and a string value.e.g ```bash -0 15,auth=123456789 ``` 
 
 ## Examples:
 
@@ -37,4 +42,7 @@ coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic --
 
 ```bash
 coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world" -H 0.0.0.0 -p 1234
+```
+```bash 
+coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -0 15,auth=1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world" -H 0.0.0.0 -p 5683
 ```

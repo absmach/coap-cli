@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -74,7 +75,14 @@ func parseCode(code string) (codes.Code, error) {
 
 func printMsg(m *pool.Message) {
 	if m != nil {
-		log.Printf("\nMESSAGE:\n %v", m)
+		log.Printf("\nMESSAGE:\n%s", m.String())
+	}
+	body, err := m.ReadBody()
+	if err != nil {
+		log.Fatalf("failed to read body %v", err)
+	}
+	if len(body) > 0 {
+		log.Printf("\nMESSAGE BODY:\n%s", string(body))
 	}
 }
 
