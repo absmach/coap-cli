@@ -11,6 +11,8 @@ import (
 	"log"
 	"time"
 
+	piondtls "github.com/pion/dtls/v2"
+	"github.com/plgd-dev/go-coap/v3/dtls"
 	"github.com/plgd-dev/go-coap/v3/message"
 	"github.com/plgd-dev/go-coap/v3/message/codes"
 	"github.com/plgd-dev/go-coap/v3/message/pool"
@@ -39,12 +41,18 @@ type Client struct {
 }
 
 // NewClient returns new CoAP client connecting it to the server.
-func NewClient(addr string, keepAlive uint64, maxRetries uint32) (Client, error) {
+func NewClient(addr string, keepAlive uint64, maxRetries uint32, dtlsConfig *piondtls.Config) (Client, error) {
 	var dialOptions []udp.Option
 	if keepAlive > 0 {
 		dialOptions = append(dialOptions, options.WithKeepAlive(maxRetries, time.Duration(keepAlive)*time.Second, onInactive))
 	}
-	c, err := udp.Dial(addr, dialOptions...)
+	var c *client.Conn
+	var err error
+	if dtlsConfig != nil {
+		c, err = dtls.Dial(addr, dtlsConfig, dialOptions...)
+	} else {
+		c, err = udp.Dial(addr, dialOptions...)
+	}
 	if err != nil {
 		return Client{}, errors.Join(errDialFailed, err)
 	}
