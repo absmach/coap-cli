@@ -21,7 +21,7 @@ Flags:
   -c, --content-format int    Content format (default 50)
   -h, --help                  help for coap-cli
   -H, --host string           Host (default "localhost")
-  -0, --options stringArray   Options
+  -O, --options stringArray   Options
   -p, --port string           Port (default "5683")
   -d, --data string           Data(default "") - only available for put, post and delete commands
   -o, --observe bool          Observe - only available for get command

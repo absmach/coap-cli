@@ -86,6 +86,72 @@ func printMsg(m *pool.Message) {
 	}
 }
 
+func makeRequest(code codes.Code, args []string) {
+	client, err := coap.New(host + ":" + port)
+	if err != nil {
+		log.Fatalf("Error coap creating client: %v", err)
+	}
+	var opts coapmsg.Options
+	if options != nil {
+		for _, optString := range options {
+			opt := strings.Split(optString, ",")
+			if len(opt) < 2 {
+				log.Fatal("Invalid option format")
+			}
+			optId, err := strconv.ParseUint(opt[0], 10, 16)
+			if err != nil {
+				log.Fatal("Error parsing option id")
+			}
+			opts = append(opts, coapmsg.Option{ID: coapmsg.OptionID(optId), Value: []byte(opt[1])})
+		}
+	}
+	if auth != "" {
+		opts = append(opts, coapmsg.Option{ID: coapmsg.URIQuery, Value: []byte("auth=" + auth)})
+	}
+	switch code {
+	case codes.GET:
+		switch {
+		case observe:
+			obs, err := client.Receive(args[0], opts...)
+			if err != nil {
+				log.Fatalf("Error observing resource: %v", err)
+			}
+			errs := make(chan error, 2)
+			go func() {
+				c := make(chan os.Signal)
+				signal.Notify(c, syscall.SIGINT)
+				errs <- fmt.Errorf("%s", <-c)
+			}()
+
+			err = <-errs
+			obs.Cancel(context.Background(), opts...)
+			log.Fatalf("Observation terminated: %v", err)
+		default:
+			res, err := client.Send(args[0], code, coapmsg.MediaType(contentFormat), nil, opts...)
+			if err != nil {
+				log.Fatalf("Error sending message: %v", err)
+			}
+			printMsg(res)
+		}
+	default:
+		pld := strings.NewReader(data)
+		res, err := client.Send(args[0], code, coapmsg.MediaType(contentFormat), pld, opts...)
+		if err != nil {
+			log.Fatalf("Error sending message: %v", err)
+		}
+		printMsg(res)
+
+	}
+}
+
+func checkArgs(cmd *cobra.Command, args []string) bool {
+	if len(args) < 1 {
+		fmt.Fprintf(os.Stdout, color.YellowString("\nusage: %s\n\n"), cmd.Use)
+		return false
+	}
+	return true
+}
+
 func main() {
 	config, err := cli.LoadConfig()
 	if err != nil {
