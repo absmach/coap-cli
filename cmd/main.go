@@ -92,19 +92,18 @@ func makeRequest(code codes.Code, args []string) {
 		log.Fatalf("Error coap creating client: %v", err)
 	}
 	var opts coapmsg.Options
-	if options != nil {
-		for _, optString := range options {
-			opt := strings.Split(optString, ",")
-			if len(opt) < 2 {
-				log.Fatal("Invalid option format")
-			}
-			optId, err := strconv.ParseUint(opt[0], 10, 16)
-			if err != nil {
-				log.Fatal("Error parsing option id")
-			}
-			opts = append(opts, coapmsg.Option{ID: coapmsg.OptionID(optId), Value: []byte(opt[1])})
+	for _, optString := range options {
+		opt := strings.Split(optString, ",")
+		if len(opt) < 2 {
+			log.Fatal("Invalid option format")
 		}
+		optId, err := strconv.ParseUint(opt[0], 10, 16)
+		if err != nil {
+			log.Fatal("Error parsing option id")
+		}
+		opts = append(opts, coapmsg.Option{ID: coapmsg.OptionID(optId), Value: []byte(opt[1])})
 	}
+
 	if auth != "" {
 		opts = append(opts, coapmsg.Option{ID: coapmsg.URIQuery, Value: []byte("auth=" + auth)})
 	}
@@ -118,13 +117,15 @@ func makeRequest(code codes.Code, args []string) {
 			}
 			errs := make(chan error, 2)
 			go func() {
-				c := make(chan os.Signal)
+				c := make(chan os.Signal, 1)
 				signal.Notify(c, syscall.SIGINT)
 				errs <- fmt.Errorf("%s", <-c)
 			}()
 
 			err = <-errs
-			obs.Cancel(context.Background(), opts...)
+			if err := obs.Cancel(context.Background(), opts...); err != nil {
+				log.Fatalf("Error cancelling observation: %v", err)
+			}
 			log.Fatalf("Observation terminated: %v", err)
 		default:
 			res, err := client.Send(args[0], code, coapmsg.MediaType(contentFormat), nil, opts...)
