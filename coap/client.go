@@ -18,6 +18,8 @@ import (
 	"github.com/plgd-dev/go-coap/v2/udp/message/pool"
 )
 
+var errInvalidMsgCode = errors.New("message can be GET, POST, PUT or DELETE")
+
 // Client represents CoAP client.
 type Client struct {
 	conn *client.ClientConn
@@ -48,7 +50,7 @@ func (c Client) Send(path string, msgCode codes.Code, cf message.MediaType, payl
 	case codes.DELETE:
 		return c.conn.Delete(ctx, path, opts...)
 	default:
-		return nil, errors.New("observation terminated")
+		return nil, errInvalidMsgCode
 	}
 }
 
