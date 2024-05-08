@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
@@ -101,11 +102,26 @@ func makeRequest(code codes.Code, args []string) {
 		if err != nil {
 			log.Fatal("Error parsing option id")
 		}
-		opts = append(opts, coapmsg.Option{ID: coapmsg.OptionID(optId), Value: []byte(opt[1])})
+		if strings.HasPrefix(opt[1], "0x") {
+			op := strings.TrimPrefix(opt[1], "0x")
+			optValue, err := hex.DecodeString(op)
+			if err != nil {
+				log.Fatal("Invalid option value ", err.Error())
+			}
+			opts = append(opts, coapmsg.Option{ID: coapmsg.OptionID(optId), Value: optValue})
+		} else {
+			opts = append(opts, coapmsg.Option{ID: coapmsg.OptionID(optId), Value: []byte(opt[1])})
+		}
 	}
 
 	if auth != "" {
 		opts = append(opts, coapmsg.Option{ID: coapmsg.URIQuery, Value: []byte("auth=" + auth)})
+	}
+
+	if opts.HasOption(coapmsg.Observe) {
+		if value, _ := opts.GetBytes(coapmsg.Observe); len(value) == 1 && value[0] == 0 && !observe {
+			observe = true
+		} 
 	}
 	switch code {
 	case codes.GET:
