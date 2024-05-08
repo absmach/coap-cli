@@ -1,3 +1,6 @@
+// Copyright (c) Abstract Machines
+// SPDX-License-Identifier: Apache-2.0
+
 package coap
 
 import (
@@ -14,6 +17,8 @@ import (
 	"github.com/plgd-dev/go-coap/v2/udp/client"
 	"github.com/plgd-dev/go-coap/v2/udp/message/pool"
 )
+
+var errInvalidMsgCode = errors.New("message can be GET, POST, PUT or DELETE")
 
 // Client represents CoAP client.
 type Client struct {
@@ -44,8 +49,9 @@ func (c Client) Send(path string, msgCode codes.Code, cf message.MediaType, payl
 		return c.conn.Put(ctx, path, cf, payload, opts...)
 	case codes.DELETE:
 		return c.conn.Delete(ctx, path, opts...)
+	default:
+		return nil, errInvalidMsgCode
 	}
-	return nil, errors.New("Invalid message code")
 }
 
 // Receive receives a message.
@@ -58,6 +64,7 @@ func (c Client) Receive(path string, opts ...message.Option) (*client.Observatio
 		body, err := res.ReadBody()
 		if err != nil {
 			fmt.Println("Error reading message body: ", err)
+
 			return
 		}
 		if len(body) > 0 {
