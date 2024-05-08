@@ -28,12 +28,16 @@ Flags:
 
 Use "coap-cli [command] --help" for more information about a command
 ```
-The options flag accepts a comma separated string comprising of the optionID defined by [RFC-7252](https://datatracker.ietf.org/doc/html/rfc7252) and a string value.
+The options flag accepts a comma separated string comprising of the optionID defined by [RFC-7252](https://datatracker.ietf.org/doc/html/rfc7252) and a string or hex value. Hex values are used to set options that require numerical values e.g observe, maxAge
 
 ## Examples:
 
 ```bash
 coap-cli get channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -o
+```
+
+```bash
+coap-cli get channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic --options 6,0x00 --options 15,auth=1e1017e6-dee7-45b4-8a13-00e6afeb66eb
 ```
 
 ```bash
@@ -44,5 +48,5 @@ coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic --
 coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world" -H 0.0.0.0 -p 1234
 ```
 ```bash 
-coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -O 15,auth=1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world" -H 0.0.0.0 -p 5683
+coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -options 15,auth=1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world" -H 0.0.0.0 -p 5683
 ```

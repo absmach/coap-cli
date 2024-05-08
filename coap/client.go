@@ -14,12 +14,16 @@ import (
 	"github.com/plgd-dev/go-coap/v3/message"
 	"github.com/plgd-dev/go-coap/v3/message/codes"
 	"github.com/plgd-dev/go-coap/v3/message/pool"
+	"github.com/plgd-dev/go-coap/v3/mux"
+	"github.com/plgd-dev/go-coap/v3/options"
 	"github.com/plgd-dev/go-coap/v3/udp"
 	"github.com/plgd-dev/go-coap/v3/udp/client"
-	"github.com/plgd-dev/go-coap/v3/mux"
 )
 
-var errInvalidMsgCode = errors.New("message can be GET, POST, PUT or DELETE")
+var (
+	maxRetries        uint32 = 10
+	errInvalidMsgCode        = errors.New("message can be GET, POST, PUT or DELETE")
+)
 
 // Client represents CoAP client.
 type Client struct {
@@ -27,12 +31,19 @@ type Client struct {
 }
 
 // New returns new CoAP client connecting it to the server.
-func New(addr string) (Client, error) {
+func New(addr string, keepAlive uint64) (Client, error) {
+	if keepAlive > 0 {
+		c, err := udp.Dial(addr, options.WithKeepAlive(maxRetries, time.Duration(keepAlive)*time.Second, onInactive))
+		if err != nil {
+			log.Fatalf("Error dialing: %v", err)
+		}
+		return Client{conn: c}, nil
+	}
+
 	c, err := udp.Dial(addr)
 	if err != nil {
 		log.Fatalf("Error dialing: %v", err)
 	}
-
 	return Client{conn: c}, nil
 }
 
@@ -72,4 +83,8 @@ func (c Client) Receive(path string, opts ...message.Option) (mux.Observation, e
 			fmt.Println("Payload: ", string(body))
 		}
 	}, opts...)
+}
+
+func onInactive(cc *client.Conn) {
+	log.Fatal(cc.Ping(cc.Context()))
 }

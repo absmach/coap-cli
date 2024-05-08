@@ -15,62 +15,76 @@ import (
 	"syscall"
 
 	coap "github.com/absmach/coap-cli/coap"
-	"github.com/plgd-dev/go-coap/v2/message"
-	coapmsg "github.com/plgd-dev/go-coap/v2/message"
-	"github.com/plgd-dev/go-coap/v2/message/codes"
-	"github.com/plgd-dev/go-coap/v2/udp/message/pool"
-)
-
-const (
-	helpCmd = `Use "coap-cli --help" for help.`
-	helpMsg = `
-Usage: coap-cli <method> <URL> [options]
-mathod: get, put, post or delete
--o      observe   option - only valid with GET request (default: false)
--auth   auth option sent as URI Query                  (default: "")
--h      host                                           (default: "localhost")
--p      port                                           (default: "5683")
--d      data to be sent in POST or PUT                 (default: "")
--cf     content format                                 (default: 50 - JSON format))
-
-Examples:
-coap-cli get channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -o
-coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world"
-coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world" -h 0.0.0.0 -p 1234
-`
+	"github.com/fatih/color"
+	coapmsg "github.com/plgd-dev/go-coap/v3/message"
+	"github.com/plgd-dev/go-coap/v3/message/codes"
+	"github.com/plgd-dev/go-coap/v3/message/pool"
+	"github.com/spf13/cobra"
 )
 
 var (
-	errCreateClient     = errors.New("failed to create client")
-	errSendMessage      = errors.New("failed to send message")
-	errInvalidObsOpt    = errors.New("invalid observe option")
-	errFailedObserve    = errors.New("failed to observe resource")
-	errTerminatedObs    = errors.New("observation terminated")
-	errCancelObs        = errors.New("failed to cancel observation")
-	errCodeNotSupported = errors.New("message can be GET, POST, PUT or DELETE")
+	host          string
+	port          string
+	contentFormat int
+	auth          string
+	observe       bool
+	data          string
+	options       []string
+	keepAlive     uint64
 )
 
-type request struct {
-	code codes.Code
-	path string
-	host *string
-	port *string
-	cf   *int
-	data *string
-	auth *string
-	obs  *bool
-}
-
-func parseCode(code string) (codes.Code, error) {
-	ret, err := codes.ToCode(code)
-	if err != nil {
-		return 0, err
+func main() {
+	rootCmd := &cobra.Command{
+		Use:   "coap-cli <method> <URL> [options]",
+		Short: "CLI for CoAP",
 	}
-	switch ret {
-	case codes.GET, codes.POST, codes.PUT, codes.DELETE:
-		return ret, nil
-	default:
-		return 0, errCodeNotSupported
+
+	getCmd := &cobra.Command{
+		Use:   "get <url>",
+		Short: "Perform a GET request on a COAP resource",
+		Example: "coap-cli get channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -a 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -H localhost -p 5683 -O 17,50 -o \n" +
+			"coap-cli get channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb --host localhost --port 5683 --options 17,50 --observe",
+		Run: runCmd(codes.GET),
+	}
+	getCmd.Flags().BoolVarP(&observe, "observe", "o", false, "Observe resource")
+
+	putCmd := &cobra.Command{
+		Use:   "put <url>",
+		Short: "Perform a PUT request on a COAP resource",
+		Example: "coap-cli put /test -H coap.me -p 5683 -c 50 -d 'hello, world'\n" +
+			"coap-cli put /test --host coap.me --port 5683 --content-format 50 --data 'hello, world'",
+		Run: runCmd(codes.PUT),
+	}
+	putCmd.Flags().StringVarP(&data, "data", "d", "", "Data")
+
+	postCmd := &cobra.Command{
+		Use:   "post <url>",
+		Short: "Perform a POST request on a COAP resource",
+		Example: "coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -a 1e1017e6-dee7-45b4-8a13-00e6afeb66eb  -H localhost -p 5683 -c 50 -d 'hello, world'\n" +
+			"coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic  --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb --host localhost --port 5683 --content-format 50 --data 'hello, world'",
+		Run: runCmd(codes.POST),
+	}
+	postCmd.Flags().StringVarP(&data, "data", "d", "", "Data")
+
+	deleteCmd := &cobra.Command{
+		Use:   "delete <url>",
+		Short: "Perform a DELETE request on a COAP resource",
+		Example: "coap-cli delete /test -H coap.me -p 5683 -c 50 -d 'hello, world' -O 17,50\n" +
+			"coap-cli delete /test --host coap.me --port 5683 --content-format 50 --data 'hello, world' --options 17,50",
+		Run: runCmd(codes.DELETE),
+	}
+	deleteCmd.Flags().StringVarP(&data, "data", "d", "", "Data")
+
+	rootCmd.AddCommand(getCmd, putCmd, postCmd, deleteCmd)
+	rootCmd.PersistentFlags().StringVarP(&host, "host", "H", "localhost", "Host")
+	rootCmd.PersistentFlags().StringVarP(&port, "port", "p", "5683", "Port")
+	rootCmd.PersistentFlags().StringVarP(&auth, "auth", "a", "", "Auth")
+	rootCmd.PersistentFlags().IntVarP(&contentFormat, "content-format", "c", 50, "Content format")
+	rootCmd.PersistentFlags().StringArrayVarP(&options, "options", "O", []string{}, "Options")
+	rootCmd.PersistentFlags().Uint64VarP(&keepAlive, "keep-alive", "K", 60, "Keep alive interval")
+
+	if err := rootCmd.Execute(); err != nil {
+		log.Fatalf("Error executing command: %v", err)
 	}
 }
 
@@ -88,10 +102,11 @@ func printMsg(m *pool.Message) {
 }
 
 func makeRequest(code codes.Code, args []string) {
-	client, err := coap.New(host + ":" + port)
+	client, err := coap.New(host+":"+port, keepAlive)
 	if err != nil {
 		log.Fatalf("Error coap creating client: %v", err)
 	}
+
 	var opts coapmsg.Options
 	for _, optString := range options {
 		opt := strings.Split(optString, ",")
@@ -113,16 +128,15 @@ func makeRequest(code codes.Code, args []string) {
 			opts = append(opts, coapmsg.Option{ID: coapmsg.OptionID(optId), Value: []byte(opt[1])})
 		}
 	}
-
 	if auth != "" {
 		opts = append(opts, coapmsg.Option{ID: coapmsg.URIQuery, Value: []byte("auth=" + auth)})
 	}
-
 	if opts.HasOption(coapmsg.Observe) {
 		if value, _ := opts.GetBytes(coapmsg.Observe); len(value) == 1 && value[0] == 0 && !observe {
 			observe = true
-		} 
+		}
 	}
+
 	switch code {
 	case codes.GET:
 		switch {
@@ -157,101 +171,15 @@ func makeRequest(code codes.Code, args []string) {
 			log.Fatalf("Error sending message: %v", err)
 		}
 		printMsg(res)
-
 	}
 }
 
-func checkArgs(cmd *cobra.Command, args []string) bool {
-	if len(args) < 1 {
-		fmt.Fprintf(os.Stdout, color.YellowString("\nusage: %s\n\n"), cmd.Use)
-		return false
-	}
-	return true
-}
-
-func main() {
-	config, err := cli.LoadConfig()
-	if err != nil {
-		log.Fatalf("Error loading config: %v", err)
-	}
-	help := strings.ToLower(os.Args[1])
-	if help == "-h" || help == "--help" {
-		log.Print(helpMsg)
-		return
-	}
-	req := request{}
-	var err error
-	req.code, err = parseCode(strings.ToUpper(os.Args[1]))
-	if err != nil {
-		log.Fatalf("Can't read request code: %s\n%s", err, helpCmd)
-	}
-
-	if len(os.Args) < 3 {
-		log.Fatalf("CoAP URL must not be empty.\n%s", helpCmd)
-	}
-	req.path = os.Args[2]
-	if strings.HasPrefix(req.path, "-") {
-		log.Fatalf("Please enter a valid CoAP URL.\n%s", helpCmd)
-	}
-
-	os.Args = os.Args[2:]
-	req.obs = flag.Bool("o", false, "Observe")
-	req.host = flag.String("h", "localhost", "Host")
-	req.port = flag.String("p", "5683", "Port")
-	// Default type is JSON.
-	req.cf = flag.Int("cf", 50, "Content format")
-	req.data = flag.String("d", "", "Message data")
-	req.auth = flag.String("auth", "", "Auth token")
-	flag.Parse()
-
-	if err = makeRequest(req); err != nil {
-		log.Fatal(err)
-	}
-}
-
-func makeRequest(req request) error {
-	client, err := coap.New(*req.host + ":" + *req.port)
-	if err != nil {
-		return errors.Join(errCreateClient, err)
-	}
-	var opts coapmsg.Options
-	if req.auth != nil {
-		opts = append(opts, coapmsg.Option{ID: coapmsg.URIQuery, Value: []byte(fmt.Sprintf("auth=%s", *req.auth))})
-	}
-
-	if req.obs == nil || (!*req.obs) {
-		pld := strings.NewReader(*req.data)
-
-		res, err := client.Send(req.path, req.code, message.MediaType(*req.cf), pld, opts...)
-		if err != nil {
-			return errors.Join(errSendMessage, err)
+func runCmd(code codes.Code) func(cmd *cobra.Command, args []string) {
+	return func(cmd *cobra.Command, args []string) {
+		if len(args) < 1 {
+			fmt.Fprintf(os.Stdout, color.YellowString("\nusage: %s\n\n"), cmd.Use)
+			return
 		}
-		printMsg(res)
-		return nil
+		makeRequest(code, args)
 	}
-	if req.code != codes.GET {
-		return errInvalidObsOpt
-	}
-	obs, err := client.Receive(req.path, opts...)
-	if err != nil {
-		return errors.Join(errFailedObserve, err)
-	}
-
-	errs := make(chan error, 1)
-	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT)
-
-		sig := <-sigChan
-		errs <- fmt.Errorf("%v", sig)
-	}()
-
-	err = <-errs
-	if err != nil {
-		return errors.Join(errTerminatedObs, err)
-	}
-	if err := obs.Cancel(context.Background()); err != nil {
-		return errors.Join(errCancelObs, err)
-	}
-	return nil
 }
