@@ -63,11 +63,14 @@ type request struct {
 
 func parseCode(code string) (codes.Code, error) {
 	ret, err := codes.ToCode(code)
+	if err != nil {
+		return 0, err
+	}
 	switch ret {
 	case codes.GET, codes.POST, codes.PUT, codes.DELETE:
 		return ret, nil
 	default:
-		return 0, errors.Join(errCodeNotSupported, err)
+		return 0, errCodeNotSupported
 	}
 }
 
