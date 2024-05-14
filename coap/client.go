@@ -86,5 +86,7 @@ func (c Client) Receive(path string, opts ...message.Option) (mux.Observation, e
 }
 
 func onInactive(cc *client.Conn) {
-	log.Fatal(cc.Ping(cc.Context()))
+	if err := cc.Ping(cc.Context()); err != nil {
+		log.Fatalf("Error pinging: %v", err)
+	}
 }
