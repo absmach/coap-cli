@@ -23,11 +23,13 @@ Flags:
   -H, --host string           Host (default "localhost")
   -O, --options stringArray   Options
   -p, --port string           Port (default "5683")
+  -v, --verbose               Verbose output
   -d, --data string           Data(default "") - only available for put, post and delete commands
   -o, --observe bool          Observe - only available for get command
 
 Use "coap-cli [command] --help" for more information about a command
 ```
+
 The options flag accepts a comma separated string comprising of the optionID defined by [RFC-7252](https://datatracker.ietf.org/doc/html/rfc7252) and a string or hex value. Hex values are used to set options that require numerical values e.g observe, maxAge
 
 ## Examples:
@@ -47,6 +49,7 @@ coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic --
 ```bash
 coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world" -H 0.0.0.0 -p 1234
 ```
-```bash 
+
+```bash
 coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -options 15,auth=1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world" -H 0.0.0.0 -p 5683
 ```

@@ -23,6 +23,7 @@ import (
 var (
 	maxRetries        uint32 = 10
 	errInvalidMsgCode        = errors.New("message can be GET, POST, PUT or DELETE")
+	errDialFailed            = errors.New("Failed to dial the connection")
 )
 
 // Client represents CoAP client.
@@ -31,18 +32,18 @@ type Client struct {
 }
 
 // New returns new CoAP client connecting it to the server.
-func New(addr string, keepAlive uint64) (Client, error) {
+func NewClient(addr string, keepAlive uint64) (Client, error) {
 	if keepAlive > 0 {
 		c, err := udp.Dial(addr, options.WithKeepAlive(maxRetries, time.Duration(keepAlive)*time.Second, onInactive))
 		if err != nil {
-			log.Fatalf("Error dialing: %v", err)
+			return Client{}, errors.Join(errDialFailed, err)
 		}
 		return Client{conn: c}, nil
 	}
 
 	c, err := udp.Dial(addr)
 	if err != nil {
-		log.Fatalf("Error dialing: %v", err)
+		return Client{}, errors.Join(errDialFailed, err)
 	}
 	return Client{conn: c}, nil
 }
@@ -67,12 +68,14 @@ func (c Client) Send(path string, msgCode codes.Code, cf message.MediaType, payl
 }
 
 // Receive receives a message.
-func (c Client) Receive(path string, opts ...message.Option) (mux.Observation, error) {
+func (c Client) Receive(path string, verbose bool, opts ...message.Option) (mux.Observation, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
 	return c.conn.Observe(ctx, path, func(res *pool.Message) {
-		fmt.Printf("\nRECEIVED OBSERVE: %v\n", res)
+		if verbose {
+			fmt.Printf("RECEIVED OBSERVE: %v\n", res)
+		}
 		body, err := res.ReadBody()
 		if err != nil {
 			fmt.Println("Error reading message body: ", err)

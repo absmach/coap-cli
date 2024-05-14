@@ -31,6 +31,7 @@ var (
 	data          string
 	options       []string
 	keepAlive     uint64
+	verbose       bool
 )
 
 func main() {
@@ -82,14 +83,15 @@ func main() {
 	rootCmd.PersistentFlags().IntVarP(&contentFormat, "content-format", "c", 50, "Content format")
 	rootCmd.PersistentFlags().StringArrayVarP(&options, "options", "O", []string{}, "Options")
 	rootCmd.PersistentFlags().Uint64VarP(&keepAlive, "keep-alive", "K", 60, "Keep alive interval")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatalf("Error executing command: %v", err)
 	}
 }
 
-func printMsg(m *pool.Message) {
-	if m != nil {
+func printMsg(m *pool.Message, verbose bool) {
+	if m != nil && verbose {
 		log.Printf("\nMESSAGE:\n%s", m.String())
 	}
 	body, err := m.ReadBody()
@@ -97,12 +99,12 @@ func printMsg(m *pool.Message) {
 		log.Fatalf("failed to read body %v", err)
 	}
 	if len(body) > 0 {
-		log.Printf("\nMESSAGE BODY:\n%s", string(body))
+		log.Printf("MESSAGE BODY:\n %s", string(body))
 	}
 }
 
 func makeRequest(code codes.Code, args []string) {
-	client, err := coap.New(host+":"+port, keepAlive)
+	client, err := coap.NewClient(host+":"+port, keepAlive)
 	if err != nil {
 		log.Fatalf("Error coap creating client: %v", err)
 	}
@@ -141,7 +143,7 @@ func makeRequest(code codes.Code, args []string) {
 	case codes.GET:
 		switch {
 		case observe:
-			obs, err := client.Receive(args[0], opts...)
+			obs, err := client.Receive(args[0], verbose, opts...)
 			if err != nil {
 				log.Fatalf("Error observing resource: %v", err)
 			}
@@ -162,7 +164,7 @@ func makeRequest(code codes.Code, args []string) {
 			if err != nil {
 				log.Fatalf("Error sending message: %v", err)
 			}
-			printMsg(res)
+			printMsg(res, verbose)
 		}
 	default:
 		pld := strings.NewReader(data)
@@ -170,7 +172,7 @@ func makeRequest(code codes.Code, args []string) {
 		if err != nil {
 			log.Fatalf("Error sending message: %v", err)
 		}
-		printMsg(res)
+		printMsg(res, verbose)
 	}
 }
 
