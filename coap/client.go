@@ -22,8 +22,16 @@ import (
 
 var (
 	errInvalidMsgCode = errors.New("message can be GET, POST, PUT or DELETE")
-	errDialFailed     = errors.New("Failed to dial the connection")
+	errDialFailed     = errors.New("failed to dial the connection")
 )
+
+const verboseFmt = `Date: %s
+Code: %s
+Type: %s
+Token: %s
+Message-ID: %d
+Content-Length: %d
+`
 
 // Client represents CoAP client.
 type Client struct {
@@ -73,22 +81,23 @@ func (c Client) Receive(path string, verbose bool, opts ...message.Option) (mux.
 			fmt.Println("Error reading message body: ", err)
 			return
 		}
-		bs, err := res.BodySize()
+		bodySize, err := res.BodySize()
 		if err != nil {
 			fmt.Println("Error getting body size: ", err)
 			return
 		}
-		if bs == 0 {
+		if bodySize == 0 {
 			fmt.Println("Received observe")
 		}
 		switch verbose {
 		case true:
-			fmt.Printf("Date: %s\n", time.Now().Format(time.RFC1123))
-			fmt.Printf("Code: %s\n", res.Code().String())
-			fmt.Printf("Type: %s\n", res.Type().String())
-			fmt.Printf("Token: %s\n", res.Token().String())
-			fmt.Printf("Message-ID: %d\n", res.MessageID())
-			fmt.Printf("Content-Length: %d\n", bs)
+			fmt.Printf(verboseFmt,
+				time.Now().Format(time.RFC1123),
+				res.Code(),
+				res.Type(),
+				res.Token(),
+				res.MessageID(),
+				bodySize)
 			if len(body) > 0 {
 				fmt.Printf("Payload: %s\n\n", string(body))
 			}

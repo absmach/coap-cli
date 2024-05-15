@@ -36,6 +36,13 @@ var (
 	maxRetries    uint32
 )
 
+const verboseFmt = `Date: %s
+Code: %s
+Type: %s
+Token: %s
+Message-ID: %d
+`
+
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "coap-cli <method> <URL> [options]",
@@ -95,11 +102,12 @@ func main() {
 
 func printMsg(m *pool.Message, verbose bool) {
 	if m != nil && verbose {
-		fmt.Printf("Date: %s\n", time.Now().Format(time.RFC1123))
-		fmt.Printf("Code: %s\n", m.Code().String())
-		fmt.Printf("Type: %s\n", m.Type().String())
-		fmt.Printf("Token: %s\n", m.Token().String())
-		fmt.Printf("Message-ID: %d\n", m.MessageID())
+		fmt.Printf(verboseFmt,
+			time.Now().Format(time.RFC1123),
+			m.Code(),
+			m.Type(),
+			m.Token(),
+			m.MessageID())
 		cf, err := m.ContentFormat()
 		if err == nil {
 			fmt.Printf("Content-Format: %s \n", cf.String())
