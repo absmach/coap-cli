@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	coap "github.com/absmach/coap-cli/coap"
 	"github.com/fatih/color"
@@ -32,6 +33,7 @@ var (
 	options       []string
 	keepAlive     uint64
 	verbose       bool
+	maxRetries    uint32
 )
 
 func main() {
@@ -82,7 +84,8 @@ func main() {
 	rootCmd.PersistentFlags().StringVarP(&auth, "auth", "a", "", "Auth")
 	rootCmd.PersistentFlags().IntVarP(&contentFormat, "content-format", "c", 50, "Content format")
 	rootCmd.PersistentFlags().StringArrayVarP(&options, "options", "O", []string{}, "Options")
-	rootCmd.PersistentFlags().Uint64VarP(&keepAlive, "keep-alive", "K", 60, "Keep alive interval")
+	rootCmd.PersistentFlags().Uint64VarP(&keepAlive, "keep-alive", "k", 60, "Keep alive interval")
+	rootCmd.PersistentFlags().Uint32VarP(&maxRetries, "max-retries", "m", 10, "Max retries for keep alive")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
 
 	if err := rootCmd.Execute(); err != nil {
@@ -92,19 +95,31 @@ func main() {
 
 func printMsg(m *pool.Message, verbose bool) {
 	if m != nil && verbose {
-		log.Printf("\nMESSAGE:\n%s", m.String())
+		fmt.Printf("Date: %s\n", time.Now().Format(time.RFC1123))
+		fmt.Printf("Code: %s\n", m.Code().String())
+		fmt.Printf("Type: %s\n", m.Type().String())
+		fmt.Printf("Token: %s\n", m.Token().String())
+		fmt.Printf("Message-ID: %d\n", m.MessageID())
+		cf, err := m.ContentFormat()
+		if err == nil {
+			fmt.Printf("Content-Format: %s \n", cf.String())
+		}
+		bs, err := m.BodySize()
+		if err == nil {
+			fmt.Printf("Content-Length: %d\n", bs)
+		}
 	}
 	body, err := m.ReadBody()
 	if err != nil {
 		log.Fatalf("failed to read body %v", err)
 	}
 	if len(body) > 0 {
-		log.Printf("MESSAGE BODY:\n %s", string(body))
+		fmt.Printf("\n%s\n", string(body))
 	}
 }
 
 func makeRequest(code codes.Code, args []string) {
-	client, err := coap.NewClient(host+":"+port, keepAlive)
+	client, err := coap.NewClient(host+":"+port, keepAlive, maxRetries)
 	if err != nil {
 		log.Fatalf("Error coap creating client: %v", err)
 	}
@@ -147,7 +162,7 @@ func makeRequest(code codes.Code, args []string) {
 			if err != nil {
 				log.Fatalf("Error observing resource: %v", err)
 			}
-			errs := make(chan error, 2)
+			errs := make(chan error, 1)
 			go func() {
 				c := make(chan os.Signal, 1)
 				signal.Notify(c, syscall.SIGINT)

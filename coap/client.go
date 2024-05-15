@@ -21,9 +21,8 @@ import (
 )
 
 var (
-	maxRetries        uint32 = 10
-	errInvalidMsgCode        = errors.New("message can be GET, POST, PUT or DELETE")
-	errDialFailed            = errors.New("Failed to dial the connection")
+	errInvalidMsgCode = errors.New("message can be GET, POST, PUT or DELETE")
+	errDialFailed     = errors.New("Failed to dial the connection")
 )
 
 // Client represents CoAP client.
@@ -31,17 +30,13 @@ type Client struct {
 	conn *client.Conn
 }
 
-// New returns new CoAP client connecting it to the server.
-func NewClient(addr string, keepAlive uint64) (Client, error) {
+// NewClient returns new CoAP client connecting it to the server.
+func NewClient(addr string, keepAlive uint64, maxRetries uint32) (Client, error) {
+	var dialOptions []udp.Option
 	if keepAlive > 0 {
-		c, err := udp.Dial(addr, options.WithKeepAlive(maxRetries, time.Duration(keepAlive)*time.Second, onInactive))
-		if err != nil {
-			return Client{}, errors.Join(errDialFailed, err)
-		}
-		return Client{conn: c}, nil
+		dialOptions = append(dialOptions, options.WithKeepAlive(maxRetries, time.Duration(keepAlive)*time.Second, onInactive))
 	}
-
-	c, err := udp.Dial(addr)
+	c, err := udp.Dial(addr, dialOptions...)
 	if err != nil {
 		return Client{}, errors.Join(errDialFailed, err)
 	}
@@ -73,17 +68,34 @@ func (c Client) Receive(path string, verbose bool, opts ...message.Option) (mux.
 	defer cancel()
 
 	return c.conn.Observe(ctx, path, func(res *pool.Message) {
-		if verbose {
-			fmt.Printf("RECEIVED OBSERVE: %v\n", res)
-		}
 		body, err := res.ReadBody()
 		if err != nil {
 			fmt.Println("Error reading message body: ", err)
-
 			return
 		}
-		if len(body) > 0 {
-			fmt.Println("Payload: ", string(body))
+		bs, err := res.BodySize()
+		if err != nil {
+			fmt.Println("Error getting body size: ", err)
+			return
+		}
+		if bs == 0 {
+			fmt.Println("Received observe")
+		}
+		switch verbose {
+		case true:
+			fmt.Printf("Date: %s\n", time.Now().Format(time.RFC1123))
+			fmt.Printf("Code: %s\n", res.Code().String())
+			fmt.Printf("Type: %s\n", res.Type().String())
+			fmt.Printf("Token: %s\n", res.Token().String())
+			fmt.Printf("Message-ID: %d\n", res.MessageID())
+			fmt.Printf("Content-Length: %d\n", bs)
+			if len(body) > 0 {
+				fmt.Printf("Payload: %s\n\n", string(body))
+			}
+		case false:
+			if len(body) > 0 {
+				fmt.Printf("Payload: %s\n", string(body))
+			}
 		}
 	}, opts...)
 }
