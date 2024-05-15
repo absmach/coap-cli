@@ -21,9 +21,9 @@ Flags:
   -c, --content-format int    Content format (default 50)
   -h, --help                  help for coap-cli
   -H, --host string           Host (default "localhost")
-  -k, --keep-alive uint       Keep alive interval (default 60)
+  -k, --keep-alive uint       Send a ping after interval seconds of inactivity. If not specified (or 0), keep-alive is disabled (default).
   -m, --max-retries uint32    Max retries for keep alive (default 10)
-  -O, --options stringArray   Options
+  -O, --options num,text      Add option num with contents of text to the request. If the text begins with 0x, then the hex text (two [0-9a-f] per byte) is converted to binary data.
   -p, --port string           Port (default "5683")
   -v, --verbose               Verbose output
   -d, --data string           Data(default "") - only available for put, post and delete commands

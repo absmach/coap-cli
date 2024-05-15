@@ -3,13 +3,13 @@ module github.com/absmach/coap-cli
 go 1.22
 
 require (
+	github.com/fatih/color v1.17.0
 	github.com/plgd-dev/go-coap/v3 v3.3.4
 	github.com/spf13/cobra v1.8.0
 )
 
 require (
 	github.com/dsnet/golib/memfile v1.0.0 // indirect
-	github.com/fatih/color v1.16.0
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

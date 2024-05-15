@@ -83,8 +83,8 @@ func main() {
 	rootCmd.PersistentFlags().StringVarP(&port, "port", "p", "5683", "Port")
 	rootCmd.PersistentFlags().StringVarP(&auth, "auth", "a", "", "Auth")
 	rootCmd.PersistentFlags().IntVarP(&contentFormat, "content-format", "c", 50, "Content format")
-	rootCmd.PersistentFlags().StringArrayVarP(&options, "options", "O", []string{}, "Options")
-	rootCmd.PersistentFlags().Uint64VarP(&keepAlive, "keep-alive", "k", 60, "Keep alive interval")
+	rootCmd.PersistentFlags().StringArrayVarP(&options, "options", "O", []string{}, "Add option num with contents of text to the request. If the text begins with 0x, then the hex text (two [0-9a-f] per byte) is converted to binary data.")
+	rootCmd.PersistentFlags().Uint64VarP(&keepAlive, "keep-alive", "k", 0, "Send a ping after interval seconds of inactivity. If not specified (or 0), keep-alive is disabled (default).")
 	rootCmd.PersistentFlags().Uint32VarP(&maxRetries, "max-retries", "m", 10, "Max retries for keep alive")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
 
