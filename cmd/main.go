@@ -5,7 +5,10 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -17,23 +20,11 @@ import (
 
 	coap "github.com/absmach/coap-cli/coap"
 	"github.com/fatih/color"
+	piondtls "github.com/pion/dtls/v2"
 	coapmsg "github.com/plgd-dev/go-coap/v3/message"
 	"github.com/plgd-dev/go-coap/v3/message/codes"
 	"github.com/plgd-dev/go-coap/v3/message/pool"
 	"github.com/spf13/cobra"
-)
-
-var (
-	host          string
-	port          string
-	contentFormat int
-	auth          string
-	observe       bool
-	data          string
-	options       []string
-	keepAlive     uint64
-	verbose       bool
-	maxRetries    uint32
 )
 
 const verboseFmt = `Date: %s
@@ -44,6 +35,8 @@ Message-ID: %d
 `
 
 func main() {
+	req := &request{}
+
 	rootCmd := &cobra.Command{
 		Use:   "coap-cli <method> <URL> [options]",
 		Short: "CLI for CoAP",
@@ -54,46 +47,49 @@ func main() {
 		Short: "Perform a GET request on a COAP resource",
 		Example: "coap-cli get channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -a 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -H localhost -p 5683 -O 17,50 -o \n" +
 			"coap-cli get channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb --host localhost --port 5683 --options 17,50 --observe",
-		Run: runCmd(codes.GET),
+		Run: runCmd(req, codes.GET),
 	}
-	getCmd.Flags().BoolVarP(&observe, "observe", "o", false, "Observe resource")
+	getCmd.Flags().BoolVarP(&req.observe, "observe", "o", false, "Observe resource")
 
 	putCmd := &cobra.Command{
 		Use:   "put <url>",
 		Short: "Perform a PUT request on a COAP resource",
 		Example: "coap-cli put /test -H coap.me -p 5683 -c 50 -d 'hello, world'\n" +
 			"coap-cli put /test --host coap.me --port 5683 --content-format 50 --data 'hello, world'",
-		Run: runCmd(codes.PUT),
+		Run: runCmd(req, codes.PUT),
 	}
-	putCmd.Flags().StringVarP(&data, "data", "d", "", "Data")
+	putCmd.Flags().StringVarP(&req.data, "data", "d", "", "Data")
 
 	postCmd := &cobra.Command{
 		Use:   "post <url>",
 		Short: "Perform a POST request on a COAP resource",
 		Example: "coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -a 1e1017e6-dee7-45b4-8a13-00e6afeb66eb  -H localhost -p 5683 -c 50 -d 'hello, world'\n" +
 			"coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic  --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb --host localhost --port 5683 --content-format 50 --data 'hello, world'",
-		Run: runCmd(codes.POST),
+		Run: runCmd(req, codes.POST),
 	}
-	postCmd.Flags().StringVarP(&data, "data", "d", "", "Data")
+	postCmd.Flags().StringVarP(&req.data, "data", "d", "", "Data")
 
 	deleteCmd := &cobra.Command{
 		Use:   "delete <url>",
 		Short: "Perform a DELETE request on a COAP resource",
 		Example: "coap-cli delete /test -H coap.me -p 5683 -c 50 -d 'hello, world' -O 17,50\n" +
 			"coap-cli delete /test --host coap.me --port 5683 --content-format 50 --data 'hello, world' --options 17,50",
-		Run: runCmd(codes.DELETE),
+		Run: runCmd(req, codes.DELETE),
 	}
-	deleteCmd.Flags().StringVarP(&data, "data", "d", "", "Data")
+	deleteCmd.Flags().StringVarP(&req.data, "data", "d", "", "Data")
 
 	rootCmd.AddCommand(getCmd, putCmd, postCmd, deleteCmd)
-	rootCmd.PersistentFlags().StringVarP(&host, "host", "H", "localhost", "Host")
-	rootCmd.PersistentFlags().StringVarP(&port, "port", "p", "5683", "Port")
-	rootCmd.PersistentFlags().StringVarP(&auth, "auth", "a", "", "Auth")
-	rootCmd.PersistentFlags().IntVarP(&contentFormat, "content-format", "c", 50, "Content format")
-	rootCmd.PersistentFlags().StringArrayVarP(&options, "options", "O", []string{}, "Add option num with contents of text to the request. If the text begins with 0x, then the hex text (two [0-9a-f] per byte) is converted to binary data.")
-	rootCmd.PersistentFlags().Uint64VarP(&keepAlive, "keep-alive", "k", 0, "Send a ping after interval seconds of inactivity. If not specified (or 0), keep-alive is disabled (default).")
-	rootCmd.PersistentFlags().Uint32VarP(&maxRetries, "max-retries", "m", 10, "Max retries for keep alive")
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output")
+	rootCmd.PersistentFlags().StringVarP(&req.host, "host", "H", "localhost", "Host")
+	rootCmd.PersistentFlags().StringVarP(&req.port, "port", "p", "5683", "Port")
+	rootCmd.PersistentFlags().StringVarP(&req.auth, "auth", "a", "", "Auth")
+	rootCmd.PersistentFlags().IntVarP(&req.contentFormat, "content-format", "c", 50, "Content format")
+	rootCmd.PersistentFlags().StringArrayVarP(&req.options, "options", "O", []string{}, "Add option num with contents of text to the request. If the text begins with 0x, then the hex text (two [0-9a-f] per byte) is converted to binary data.")
+	rootCmd.PersistentFlags().Uint64VarP(&req.keepAlive, "keep-alive", "k", 0, "Send a ping after interval seconds of inactivity. If not specified (or 0), keep-alive is disabled (default).")
+	rootCmd.PersistentFlags().Uint32VarP(&req.maxRetries, "max-retries", "m", 10, "Max retries for keep alive")
+	rootCmd.PersistentFlags().BoolVarP(&req.verbose, "verbose", "v", false, "Verbose output")
+	rootCmd.PersistentFlags().StringVarP(&req.certFile, "cert-file", "C", "", "Client certificate file")
+	rootCmd.PersistentFlags().StringVarP(&req.keyFile, "key-file", "K", "", "Client key file")
+	rootCmd.PersistentFlags().StringVarP(&req.clientCAFile, "ca-file", "A", "", "Client CA file")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatalf("Error executing command: %v", err)
@@ -126,14 +122,18 @@ func printMsg(m *pool.Message, verbose bool) {
 	}
 }
 
-func makeRequest(code codes.Code, args []string) {
-	client, err := coap.NewClient(host+":"+port, keepAlive, maxRetries)
+func makeRequest(req *request, args []string) {
+	dtlsConfig, err := req.createDTLSConfig()
+	if err != nil {
+		log.Fatalf("Error creating DTLS config: %v", err)
+	}
+	client, err := coap.NewClient(req.host+":"+req.port, req.keepAlive, req.maxRetries, dtlsConfig)
 	if err != nil {
 		log.Fatalf("Error coap creating client: %v", err)
 	}
 
 	var opts coapmsg.Options
-	for _, optString := range options {
+	for _, optString := range req.options {
 		opt := strings.Split(optString, ",")
 		if len(opt) < 2 {
 			log.Fatal("Invalid option format")
@@ -153,20 +153,20 @@ func makeRequest(code codes.Code, args []string) {
 			opts = append(opts, coapmsg.Option{ID: coapmsg.OptionID(optId), Value: []byte(opt[1])})
 		}
 	}
-	if auth != "" {
-		opts = append(opts, coapmsg.Option{ID: coapmsg.URIQuery, Value: []byte("auth=" + auth)})
+	if req.auth != "" {
+		opts = append(opts, coapmsg.Option{ID: coapmsg.URIQuery, Value: []byte("auth=" + req.auth)})
 	}
 	if opts.HasOption(coapmsg.Observe) {
-		if value, _ := opts.GetBytes(coapmsg.Observe); len(value) == 1 && value[0] == 0 && !observe {
-			observe = true
+		if value, _ := opts.GetBytes(coapmsg.Observe); len(value) == 1 && value[0] == 0 && !req.observe {
+			req.observe = true
 		}
 	}
 
-	switch code {
+	switch req.code {
 	case codes.GET:
 		switch {
-		case observe:
-			obs, err := client.Receive(args[0], verbose, opts...)
+		case req.observe:
+			obs, err := client.Receive(args[0], req.verbose, opts...)
 			if err != nil {
 				log.Fatalf("Error observing resource: %v", err)
 			}
@@ -183,28 +183,79 @@ func makeRequest(code codes.Code, args []string) {
 			}
 			log.Fatalf("Observation terminated: %v", err)
 		default:
-			res, err := client.Send(args[0], code, coapmsg.MediaType(contentFormat), nil, opts...)
+			res, err := client.Send(args[0], req.code, coapmsg.MediaType(req.contentFormat), nil, opts...)
 			if err != nil {
 				log.Fatalf("Error sending message: %v", err)
 			}
-			printMsg(res, verbose)
+			printMsg(res, req.verbose)
 		}
 	default:
-		pld := strings.NewReader(data)
-		res, err := client.Send(args[0], code, coapmsg.MediaType(contentFormat), pld, opts...)
+		pld := strings.NewReader(req.data)
+		res, err := client.Send(args[0], req.code, coapmsg.MediaType(req.contentFormat), pld, opts...)
 		if err != nil {
 			log.Fatalf("Error sending message: %v", err)
 		}
-		printMsg(res, verbose)
+		printMsg(res, req.verbose)
 	}
 }
 
-func runCmd(code codes.Code) func(cmd *cobra.Command, args []string) {
+func runCmd(req *request, code codes.Code) func(cmd *cobra.Command, args []string) {
 	return func(cmd *cobra.Command, args []string) {
 		if len(args) < 1 {
 			fmt.Fprintf(os.Stdout, color.YellowString("\nusage: %s\n\n"), cmd.Use)
 			return
 		}
-		makeRequest(code, args)
+		req.code = code
+		makeRequest(req, args)
 	}
+}
+
+type request struct {
+	code          codes.Code
+	host          string
+	port          string
+	contentFormat int
+	auth          string
+	observe       bool
+	data          string
+	options       []string
+	keepAlive     uint64
+	verbose       bool
+	maxRetries    uint32
+	certFile      string
+	keyFile       string
+	clientCAFile  string
+}
+
+func (r *request) createDTLSConfig() (*piondtls.Config, error) {
+	if r.certFile == "" || r.keyFile == "" {
+		return nil, nil
+	}
+	dc := &piondtls.Config{}
+	cert, err := tls.LoadX509KeyPair(r.certFile, r.keyFile)
+	if err != nil {
+		return nil, errors.Join(errors.New("failed to load certificates"), err)
+	}
+	dc.Certificates = []tls.Certificate{cert}
+	rootCA, err := loadCertFile(r.clientCAFile)
+	if err != nil {
+		return nil, errors.Join(errors.New("failed to load Client CA"), err)
+	}
+	if len(rootCA) > 0 {
+		if dc.RootCAs == nil {
+			dc.RootCAs = x509.NewCertPool()
+		}
+		if !dc.RootCAs.AppendCertsFromPEM(rootCA) {
+			return nil, errors.New("failed to append root ca tls.Config")
+		}
+	}
+	dc.InsecureSkipVerify = true
+	return dc, nil
+}
+
+func loadCertFile(certFile string) ([]byte, error) {
+	if certFile != "" {
+		return os.ReadFile(certFile)
+	}
+	return []byte{}, nil
 }
