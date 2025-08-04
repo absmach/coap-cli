@@ -52,8 +52,8 @@ func main() {
 	getCmd := &cobra.Command{
 		Use:   "get <url>",
 		Short: "Perform a GET request on a COAP resource",
-		Example: "coap-cli get channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -a 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -H localhost -p 5683 -O 17,50 -o \n" +
-			"coap-cli get channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb --host localhost --port 5683 --options 17,50 --observe",
+		Example: "coap-cli get m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic -a 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -H localhost -p 5683 -O 17,50 -o \n" +
+			"coap-cli get m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb --host localhost --port 5683 --options 17,50 --observe",
 		Run: runCmd(codes.GET),
 	}
 	getCmd.Flags().BoolVarP(&observe, "observe", "o", false, "Observe resource")
@@ -70,8 +70,8 @@ func main() {
 	postCmd := &cobra.Command{
 		Use:   "post <url>",
 		Short: "Perform a POST request on a COAP resource",
-		Example: "coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -a 1e1017e6-dee7-45b4-8a13-00e6afeb66eb  -H localhost -p 5683 -c 50 -d 'hello, world'\n" +
-			"coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic  --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb --host localhost --port 5683 --content-format 50 --data 'hello, world'",
+		Example: "coap-cli post m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic -a 1e1017e6-dee7-45b4-8a13-00e6afeb66eb  -H localhost -p 5683 -c 50 -d 'hello, world'\n" +
+			"coap-cli post m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic  --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb --host localhost --port 5683 --content-format 50 --data 'hello, world'",
 		Run: runCmd(codes.POST),
 	}
 	postCmd.Flags().StringVarP(&data, "data", "d", "", "Data")
