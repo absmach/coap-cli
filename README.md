@@ -37,21 +37,21 @@ The options flag accepts a comma separated string comprising of the optionID def
 ## Examples
 
 ```bash
-coap-cli get channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -o
+coap-cli get m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -o
 ```
 
 ```bash
-coap-cli get channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic --options 6,0x00 --options 15,auth=1e1017e6-dee7-45b4-8a13-00e6afeb66eb
+coap-cli get m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic --options 6,0x00 --options 15,auth=1e1017e6-dee7-45b4-8a13-00e6afeb66eb
 ```
 
 ```bash
-coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world"
+coap-cli post m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world"
 ```
 
 ```bash
-coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world" -H 0.0.0.0 -p 1234
+coap-cli post m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world" -H 0.0.0.0 -p 1234
 ```
 
 ```bash
-coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic -options 15,auth=1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world" -H 0.0.0.0 -p 5683
+coap-cli post m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic --options 15,auth=1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world" -H 0.0.0.0 -p 5683
 ```
