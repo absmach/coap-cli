@@ -10,13 +10,13 @@ BUILD_FLAGS=-ldflags "-s -w"
 all: linux darwin windows
 
 linux:
-	CGO_ENABLED=0 GOOS=linux go build $(BUILD_FLAGS) -o $(BUILD_DIR)/coap-cli-linux cmd/main.go
+	CGO_ENABLED=0 GOOS=linux go build $(BUILD_FLAGS) -o $(BUILD_DIR)/coap-cli-linux main.go
 
 darwin:
-	CGO_ENABLED=0 GOOS=darwin go build $(BUILD_FLAGS) -o $(BUILD_DIR)/coap-cli-darwin cmd/main.go
+	CGO_ENABLED=0 GOOS=darwin go build $(BUILD_FLAGS) -o $(BUILD_DIR)/coap-cli-darwin main.go
 
 windows:
-	CGO_ENABLED=0 GOOS=windows go build $(BUILD_FLAGS) -o $(BUILD_DIR)/coap-cli-windows cmd/main.go
+	CGO_ENABLED=0 GOOS=windows go build $(BUILD_FLAGS) -o $(BUILD_DIR)/coap-cli-windows main.go
 	
 install: install-linux 
 
