@@ -6,10 +6,10 @@ name: Continuous Integration
 on:
   pull_request:
     branches:
-      - master
+      - main
   push:
     branches:
-      - master
+      - main
 
 jobs:
   lint-and-build:
@@ -18,18 +18,19 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.22.x
+          go-version: 1.25.x
           cache-dependency-path: "go.sum"
 
       - name: Check linting
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v8
         with:
-          version: v1.56.2
+          version: v2.4.0
+          args: --config ./.golangci.yml
 
       - name: Build Binaries
         run: |
