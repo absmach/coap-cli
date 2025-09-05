@@ -20,7 +20,7 @@ import (
 
 	coap "github.com/absmach/coap-cli/coap"
 	"github.com/fatih/color"
-	piondtls "github.com/pion/dtls/v2"
+	piondtls "github.com/pion/dtls/v3"
 	coapmsg "github.com/plgd-dev/go-coap/v3/message"
 	"github.com/plgd-dev/go-coap/v3/message/codes"
 	"github.com/plgd-dev/go-coap/v3/message/pool"
