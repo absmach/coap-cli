@@ -2,9 +2,52 @@
 
 Simple CoAP cli client written in Go.
 
+## Installation
+
+### Linux
+
+```bash
+# x86_64
+curl -sL https://github.com/absmach/coap-cli/releases/download/v0.4.1/coap-cli-linux-amd64 -o coap-cli && chmod +x coap-cli
+# arm64
+curl -sL https://github.com/absmach/coap-cli/releases/download/v0.4.1/coap-cli-linux-arm64 -o coap-cli && chmod +x coap-cli
+# riscv64
+curl -sL https://github.com/absmach/coap-cli/releases/download/v0.4.1/coap-cli-linux-riscv64 -o coap-cli && chmod +x coap-cli
+```
+
+### MacOS
+
+```bash
+# x86_64
+curl -sL https://github.com/absmach/coap-cli/releases/download/v0.4.1/coap-cli-darwin-amd64 -o coap-cli && chmod +x coap-cli
+# arm64
+curl -sL https://github.com/absmach/coap-cli/releases/download/v0.4.1/coap-cli-darwin-arm64 -o coap-cli && chmod +x coap-cli
+```
+
+### Windows
+
+```bash
+# x86_64
+curl -sL https://github.com/absmach/coap-cli/releases/download/v0.4.1/coap-cli-windows-amd64 -o coap-cli.exe
+# arm64
+curl -sL https://github.com/absmach/coap-cli/releases/download/v0.4.1/coap-cli-windows-arm64 -o coap-cli.exe
+```
+
+### Build from source
+
+Make sure you have Go and Make installed.
+
+```bash
+git clone https://github.com/absmach/coap-cli.git
+cd coap-cli
+make install # or INSTALL_DIR=~/go/bin make install
+```
+
 ## Usage
 
 ```bash
+CLI for CoAP
+
 Usage:
   coap-cli [command]
 
@@ -26,13 +69,11 @@ Flags:
   -k, --keep-alive uint       Send a ping after interval seconds of inactivity. If not specified (or 0), keep-alive is disabled (default).
   -K, --key-file string       Client key file
   -m, --max-retries uint32    Max retries for keep alive (default 10)
-  -O, --options num,text      Add option num with contents of text to the request. If the text begins with 0x, then the hex text (two [0-9a-f] per byte) is converted to binary data.
+  -O, --options stringArray   Add option num with contents of text to the request. If the text begins with 0x, then the hex text (two [0-9a-f] per byte) is converted to binary data.
   -p, --port string           Port (default "5683")
   -v, --verbose               Verbose output
-  -d, --data string           Data(default "") - only available for put, post and delete commands
-  -o, --observe bool          Observe - only available for get command
 
-Use "coap-cli [command] --help" for more information about a command
+Use "coap-cli [command] --help" for more information about a command.
 ```
 
 The options flag accepts a comma separated string comprising of the optionID defined by [RFC-7252](https://datatracker.ietf.org/doc/html/rfc7252) and a string or hex value. Hex values are used to set options that require numerical values e.g observe, maxAge
@@ -54,7 +95,6 @@ coap-cli get m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26
 ```bash
 coap-cli post m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world"
 ```
-
 
 ```bash
 coap-cli post m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world" -H 0.0.0.0 -p 1234
