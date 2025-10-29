@@ -90,6 +90,7 @@ func main() {
 	rootCmd.PersistentFlags().StringVarP(&req.certFile, "cert-file", "C", "", "Client certificate file")
 	rootCmd.PersistentFlags().StringVarP(&req.keyFile, "key-file", "K", "", "Client key file")
 	rootCmd.PersistentFlags().StringVarP(&req.clientCAFile, "ca-file", "A", "", "Client CA file")
+	rootCmd.PersistentFlags().BoolVarP(&req.useDTLS, "use DTLS", "s", false, "Use DTLS")
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatalf("Error executing command: %v", err)
@@ -225,18 +226,21 @@ type request struct {
 	certFile      string
 	keyFile       string
 	clientCAFile  string
+	useDTLS       bool
 }
 
 func (r *request) createDTLSConfig() (*piondtls.Config, error) {
-	if r.certFile == "" || r.keyFile == "" {
+	if !r.useDTLS {
 		return nil, nil
 	}
 	dc := &piondtls.Config{}
-	cert, err := tls.LoadX509KeyPair(r.certFile, r.keyFile)
-	if err != nil {
-		return nil, errors.Join(errors.New("failed to load certificates"), err)
+	if r.certFile != "" && r.keyFile != "" {
+		cert, err := tls.LoadX509KeyPair(r.certFile, r.keyFile)
+		if err != nil {
+			return nil, errors.Join(errors.New("failed to load certificates"), err)
+		}
+		dc.Certificates = []tls.Certificate{cert}
 	}
-	dc.Certificates = []tls.Certificate{cert}
 	rootCA, err := loadCertFile(r.clientCAFile)
 	if err != nil {
 		return nil, errors.Join(errors.New("failed to load Client CA"), err)
@@ -249,7 +253,6 @@ func (r *request) createDTLSConfig() (*piondtls.Config, error) {
 			return nil, errors.New("failed to append root ca tls.Config")
 		}
 	}
-	dc.InsecureSkipVerify = true
 	return dc, nil
 }
 
