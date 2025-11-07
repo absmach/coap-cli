@@ -71,6 +71,7 @@ Flags:
   -m, --max-retries uint32    Max retries for keep alive (default 10)
   -O, --options stringArray   Add option num with contents of text to the request. If the text begins with 0x, then the hex text (two [0-9a-f] per byte) is converted to binary data.
   -p, --port string           Port (default "5683")
+  -s, --use DTLS              Use DTLS
   -v, --verbose               Verbose output
 
 Use "coap-cli [command] --help" for more information about a command.
@@ -81,29 +82,28 @@ The options flag accepts a comma separated string comprising of the optionID def
 ## Examples
 
 ```bash
+# GET request with custom auth and observe
 coap-cli get m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -o
-```
 
-```bash
+# GET request with custom options
+# Options flags accept option codes and values according to RFC7252
 coap-cli get m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic --options 6,0x00 --options 15,auth=1e1017e6-dee7-45b4-8a13-00e6afeb66eb
-```
 
-```bash
-coap-cli get m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic --options 6,0x00 --options 15,auth=1e1017e6-dee7-45b4-8a13-00e6afeb66eb --ca-file ssl/certs/ca.crt --cert-file ssl/certs/client.crt --key-file ssl/certs/client.key
-```
+# GET request using DTLS for DTLS server with no requirement for client certificates
+coap-cli get m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic --options 6,0x00 --options 15,auth=1e1017e6-dee7-45b4-8a13-00e6afeb66eb --ca-file /etc/ssl/certs/ca-certificates.crt -s
 
-```bash
+# GET request using DTLS for DTLS server requiring client certificates
+coap-cli get m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic --options 6,0x00 --options 15,auth=1e1017e6-dee7-45b4-8a13-00e6afeb66eb --ca-file ssl/certs/ca.crt --cert-file ssl/certs/client.crt --key-file ssl/certs/client.key -s
+
+# POST request with custom auth and payload
 coap-cli post m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world"
-```
 
-```bash
+# POST request with custom auth, payload, host and port
 coap-cli post m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world" -H 0.0.0.0 -p 1234
-```
 
-```bash
-coap-cli post m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic --options 15,auth=1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world" -H 0.0.0.0 -p 5683
-```
+# POST request using DTLS for DTLS server with no requirement for client certificates
+coap-cli post m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world" --ca-file /etc/ssl/certs/ca-certificates.crt -s
 
-```bash
-coap-cli post channels/0bb5ba61-a66e-4972-bab6-26f19962678f/messages/subtopic --auth 1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world" --ca-file ssl/certs/ca.crt --cert-file ssl/certs/client.crt --key-file ssl/certs/client.key
+# POST request using DTLS for DTLS server requiring client certificates
+coap-cli post m/aa844fac-2f74-4ec3-8318-849b95d03bcc/c/0bb5ba61-a66e-4972-bab6-26f19962678f/subtopic --options 15,auth=1e1017e6-dee7-45b4-8a13-00e6afeb66eb -d "hello world" --ca-file ssl/certs/ca.crt --cert-file ssl/certs/client.crt --key-file ssl/certs/client.key -s
 ```
